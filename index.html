@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passwortwiederherstellung — Cheatsheet</title>
+<meta name="description" content="Praxis-Cheatsheet für Passwortwiederherstellung: hashcat, John the Ripper, *2john-Extraktion und Angriffsstrategien pro Aufgabentyp.">
+<style>
+:root{
+  --bg:#0b0e14; --bg2:#111520; --panel:#141925; --border:#232a3a;
+  --text:#dbe2f0; --text-dim:#8892a6; --accent:#5eead4; --accent2:#f0b429;
+  --danger:#f87171; --code-bg:#0a0d14; --link:#7dd3fc;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+:root[data-theme="light"]{
+  --bg:#f7f8fb; --bg2:#ffffff; --panel:#ffffff; --border:#e2e6ee;
+  --text:#1a2233; --text-dim:#5b6478; --accent:#0f766e; --accent2:#a16207;
+  --danger:#b91c1c; --code-bg:#eef1f7; --link:#0369a1;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f7f8fb; --bg2:#ffffff; --panel:#ffffff; --border:#e2e6ee;
+    --text:#1a2233; --text-dim:#5b6478; --accent:#0f766e; --accent2:#a16207;
+    --danger:#b91c1c; --code-bg:#eef1f7; --link:#0369a1;
+  }
+}
+*{box-sizing:border-box;}
+body{background:var(--bg); color:var(--text); font-family:var(--sans); margin:0; line-height:1.55;}
+a{color:var(--link);}
+code, pre, kbd{font-family:var(--mono);}
+h1,h2,h3,h4{font-family:var(--sans); font-weight:700; letter-spacing:-0.01em;}
+h2{scroll-margin-top:5.5rem; border-bottom:1px solid var(--border); padding-bottom:.5rem; margin-top:3rem;}
+h3{scroll-margin-top:5.5rem; color:var(--accent);}
+
+/* ---------- layout ---------- */
+.topbar{
+  position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:.75rem;
+  background:color-mix(in srgb, var(--bg2) 92%, transparent); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border); padding:.6rem 1rem;
+}
+.topbar .brand{font-weight:800; font-size:1rem; white-space:nowrap;}
+.topbar .brand small{display:block; font-weight:400; color:var(--text-dim); font-size:.72rem;}
+.topbar .spacer{flex:1;}
+#search{
+  background:var(--panel); border:1px solid var(--border); color:var(--text);
+  padding:.45rem .7rem; border-radius:8px; font-size:.85rem; width:220px; max-width:40vw;
+}
+.iconbtn{
+  background:var(--panel); border:1px solid var(--border); color:var(--text);
+  padding:.45rem .6rem; border-radius:8px; cursor:pointer; font-size:.85rem;
+}
+.iconbtn:hover{border-color:var(--accent);}
+.badge{
+  font-size:.7rem; border:1px solid var(--danger); color:var(--danger);
+  padding:.15rem .5rem; border-radius:999px; white-space:nowrap;
+}
+
+.layout{display:flex; max-width:1400px; margin:0 auto; align-items:flex-start;}
+nav.sidebar{
+  position:sticky; top:3.4rem; align-self:flex-start; width:250px; flex-shrink:0;
+  height:calc(100vh - 3.4rem); overflow-y:auto; padding:1.2rem .8rem 3rem;
+  border-right:1px solid var(--border);
+}
+nav.sidebar a{
+  display:block; color:var(--text-dim); text-decoration:none; font-size:.86rem;
+  padding:.32rem .6rem; border-radius:6px; margin-bottom:1px;
+}
+nav.sidebar a:hover{background:var(--panel); color:var(--text);}
+nav.sidebar a.active{background:var(--panel); color:var(--accent); font-weight:600;}
+nav.sidebar .navgroup-title{
+  font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim);
+  margin:1.1rem .6rem .3rem; font-weight:700;
+}
+nav.sidebar .sub{padding-left:1.1rem; font-size:.8rem;}
+
+main{flex:1; min-width:0; padding:1.5rem 2rem 6rem; max-width:900px;}
+main > .intro{margin-bottom:2rem;}
+.hint{color:var(--text-dim); font-size:.85rem;}
+
+/* ---------- components ---------- */
+.callout{border:1px solid var(--border); border-left:4px solid var(--accent); background:var(--panel); border-radius:8px; padding:.9rem 1.1rem; margin:1rem 0;}
+.callout.warn{border-left-color:var(--danger);}
+.callout.tip{border-left-color:var(--accent2);}
+.callout .kicker{font-weight:700; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--accent); margin-bottom:.3rem;}
+.callout.warn .kicker{color:var(--danger);}
+.callout.tip .kicker{color:var(--accent2);}
+
+table{width:100%; border-collapse:collapse; margin:1rem 0; font-size:.86rem;}
+th,td{border:1px solid var(--border); padding:.45rem .6rem; text-align:left; vertical-align:top;}
+th{background:var(--panel); font-size:.75rem; text-transform:uppercase; letter-spacing:.03em; color:var(--text-dim);}
+td code{font-size:.82rem;}
+
+.codewrap{position:relative; margin:.9rem 0;}
+pre{
+  background:var(--code-bg); border:1px solid var(--border); border-radius:10px;
+  padding:.9rem 1rem; overflow-x:auto; font-size:.83rem; line-height:1.5; margin:0;
+}
+.copybtn{
+  position:absolute; top:.5rem; right:.5rem; background:var(--panel); border:1px solid var(--border);
+  color:var(--text-dim); font-size:.72rem; padding:.25rem .55rem; border-radius:6px; cursor:pointer;
+  font-family:var(--sans); opacity:.75;
+}
+.copybtn:hover{opacity:1; color:var(--text); border-color:var(--accent);}
+
+.workflow{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.7rem; margin:1.2rem 0;}
+.workflow .step{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:.8rem; position:relative;}
+.workflow .step .n{color:var(--accent); font-weight:800; font-size:.75rem;}
+.workflow .step h4{margin:.25rem 0 .3rem; font-size:.92rem;}
+.workflow .step p{margin:0; font-size:.8rem; color:var(--text-dim);}
+
+.task-card{border:1px solid var(--border); border-radius:10px; margin:.8rem 0; background:var(--panel); overflow:hidden;}
+.task-card > .task-head{
+  display:flex; align-items:center; gap:.7rem; padding:.85rem 1.1rem; cursor:pointer; user-select:none;
+}
+.task-card > .task-head .tnum{
+  font-family:var(--mono); font-size:.75rem; color:var(--bg); background:var(--accent);
+  border-radius:6px; padding:.1rem .45rem; font-weight:700; flex-shrink:0;
+}
+.task-card > .task-head .ttitle{font-weight:700; flex:1;}
+.task-card > .task-head .ttool{font-size:.72rem; color:var(--text-dim); font-family:var(--mono); white-space:nowrap;}
+.task-card > .task-head .chev{transition:transform .15s ease; color:var(--text-dim);}
+.task-card.open > .task-head .chev{transform:rotate(90deg);}
+.task-card > .task-body{max-height:0; overflow:hidden; transition:max-height .2s ease;}
+.task-card.open > .task-body{max-height:none;}
+.task-card > .task-body-inner{padding:0 1.1rem 1.1rem;}
+
+.toolbar-row{display:flex; gap:.5rem; margin:.6rem 0 1rem;}
+.toolbar-row button{
+  background:var(--panel); border:1px solid var(--border); color:var(--text); font-size:.78rem;
+  padding:.35rem .7rem; border-radius:7px; cursor:pointer;
+}
+.toolbar-row button:hover{border-color:var(--accent);}
+
+.pill-row{display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0;}
+.pill{font-size:.72rem; font-family:var(--mono); background:var(--code-bg); border:1px solid var(--border); border-radius:999px; padding:.15rem .6rem; color:var(--text-dim);}
+
+footer{border-top:1px solid var(--border); padding:2rem; text-align:center; color:var(--text-dim); font-size:.8rem;}
+
+.dimmed{opacity:.25; filter:grayscale(.4);}
+
+/* mobile */
+.menubtn{display:none;}
+@media (max-width: 900px){
+  .menubtn{display:inline-block;}
+  nav.sidebar{
+    position:fixed; left:0; top:3.4rem; background:var(--bg2); z-index:30; width:78vw; max-width:300px;
+    transform:translateX(-105%); transition:transform .18s ease; box-shadow:8px 0 24px rgba(0,0,0,.35);
+  }
+  nav.sidebar.open{transform:translateX(0);}
+  main{padding:1.2rem 1rem 6rem;}
+  #search{width:130px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="iconbtn menubtn" id="menuBtn" aria-label="Menü">☰</button>
+  <div class="brand">Passwortwiederherstellung — Cheatsheet
+    <small>Adv. Practical IT Security (W3WI_SE411) · DHBW Mannheim</small>
+  </div>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Suchen … z.B. „pdf2john“, „7z“, „mask“">
+  <button class="iconbtn" id="themeBtn" title="Theme wechseln">◐</button>
+  <span class="badge">§202a StGB</span>
+</div>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <a href="#workflow">Workflow</a>
+    <a href="#analyse">1. Analyse</a>
+    <a href="#extraktion">2. Hash-Extraktion</a>
+    <a href="#hashcat">3. Hashcat Basics</a>
+    <div class="sub">
+      <a href="#hc-modi">Angriffsmodi</a>
+      <a href="#hc-masken">Masken &amp; Zeichensätze</a>
+      <a href="#hc-regeln">Regeln</a>
+      <a href="#hc-stdout">Wortlisten bauen (--stdout)</a>
+    </div>
+    <a href="#john">John the Ripper</a>
+    <a href="#prince">Princeprocessor</a>
+    <a href="#verifikation">4. Verifikation &amp; False Positives</a>
+    <div class="navgroup-title">Hands-On je Aufgabentyp</div>
+    <div class="sub" id="tasknav"></div>
+    <a href="#wortlisten">Wortlisten &amp; Tools</a>
+    <a href="#doku">Doku-Vorlage</a>
+  </nav>
+
+  <main>
+    <div class="intro">
+      <p class="hint">Referenz für die Übungs- &amp; Lab-Aufgaben „Passwortwiederherstellung“. Deckt die Standard-Toolchain (hashcat, John, *2john) und die konkreten Angriffsstrategien für jeden Aufgabentyp ab. Nur auf eigenen Systemen bzw. mit ausdrücklicher Erlaubnis einsetzen — unbefugter Zugriff ist nach <strong>§ 202a StGB</strong> strafbar.</p>
+    </div>
+
+    <h2 id="workflow">Workflow</h2>
+    <div class="workflow">
+      <div class="step"><div class="n">01</div><h4>Analyse</h4><p>Dateityp &amp; erzeugende Software bestimmen — nie dem Dateinamen trauen.</p></div>
+      <div class="step"><div class="n">02</div><h4>Extraktion</h4><p>Hash mit dem passenden <code>*2john</code>-Tool ziehen, für hashcat aufbereiten.</p></div>
+      <div class="step"><div class="n">03</div><h4>Angriff</h4><p>Maske → Wortliste → Regeln/Hybrid → Custom-Wortliste, je nach Kontextwissen.</p></div>
+      <div class="step"><div class="n">04</div><h4>Verifikation</h4><p>Fund gegen die echte Datei testen, False Positives ausschließen.</p></div>
+    </div>
+
+    <div class="callout tip">
+      <div class="kicker">Bewertungslogik</div>
+      Der <strong>Weg zählt</strong>, nicht nur der Fund. Für jede Aufgabe sprechfähig sein zu: Vorbereitung (Extraktion, Hash-Aufbereitung, Wörterbuch-Quellen, Tooling), Angriff (Schritte + gefundene Passwörter) und Dauer der Suche (grob in Minuten).
+    </div>
+
+    <h2 id="analyse">1. Analyse</h2>
+    <p>Erst verifizieren, <em>was</em> man wirklich vor sich hat — Dateiendungen lügen (siehe Aufgabentyp „Numbers&lt;X&gt;“ unten).</p>
+    <div class="codewrap"><pre><code>file Unbekannt.dat
+binwalk -E Unbekannt.dat        # Entropie — hoch &amp; flach = verschlüsselt/komprimiert
+xxd Unbekannt.dat | head        # Magic Bytes von Hand prüfen</code></pre></div>
+
+    <table>
+      <tr><th>Magic Bytes (hex)</th><th>Typ</th></tr>
+      <tr><td><code>25 50 44 46</code> (<code>%PDF</code>)</td><td>PDF</td></tr>
+      <tr><td><code>37 7A BC AF 27 1C</code></td><td>7-Zip</td></tr>
+      <tr><td><code>50 4B 03 04</code> (<code>PK</code>)</td><td>ZIP / DOCX / XLSX / ODT / Pages / Numbers / KeePass-Container-Varianten</td></tr>
+      <tr><td><code>03 D9 A2 9A</code> / ASCII <code>KDBX</code></td><td>KeePass 2.x Datenbank</td></tr>
+    </table>
+    <div class="callout warn"><div class="kicker">Gotcha</div>Viele moderne Formate (docx, odt, pages, numbers, kdbx-Export) sind intern ZIP-Container. <code>file</code> und <code>binwalk</code> erkennen trotzdem meist das konkrete Sub-Format — im Zweifel <code>unzip -l</code> versuchen (schlägt bei echter Verschlüsselung fehl, das ist selbst schon eine Information).</div>
+
+    <h2 id="extraktion">2. Hash-Extraktion — die <code>*2john</code>-Familie</h2>
+    <p>Muster: <code>&lt;typ&gt;2john &lt;datei&gt; &gt; &lt;datei&gt;.john</code>. Die Ausgabe ist John-Syntax (<code>dateiname:$hash$...</code>) und muss für hashcat meist bereinigt werden.</p>
+    <table>
+      <tr><th>Tool</th><th>Für</th><th>hashcat <code>-m</code></th></tr>
+      <tr><td><code>pdf2john.pl</code></td><td>Verschlüsselte PDFs</td><td>10400/10410/10420 (Acrobat 2–4) · 10500 (Acrobat 5–8, RC4/AES-128) · 10600/10700 (Acrobat 9+, AES-128/256) — welcher Modus, verrät <code>pdf2john</code>s Ausgabe selbst (Revision/V-Wert)</td></tr>
+      <tr><td><code>7z2john.pl</code></td><td>.7z-Archive</td><td>11600</td></tr>
+      <tr><td><code>zip2john</code></td><td>.zip-Archive</td><td>17200 / 17210 / 17220 / 17225 / 17230 (PKZIP, je nach Kompression) · 13600 (WinZip/AES)</td></tr>
+      <tr><td><code>keepass2john</code></td><td>KeePass <code>.kdbx</code></td><td>13400</td></tr>
+      <tr><td><code>libreoffice2john</code></td><td>ODF: <code>.odt</code> / <code>.ods</code> / <code>.odp</code></td><td>18400</td></tr>
+      <tr><td><code>iwork2john</code></td><td>Apple iWork: <code>.pages</code> / <code>.numbers</code> / <code>.key</code></td><td>23300</td></tr>
+      <tr><td><code>office2john.py</code></td><td>MS Office: <code>.docx</code>/<code>.xlsx</code>/<code>.pptx</code></td><td>9500 (2010) / 9600 (2013+) · 9400 (2007)</td></tr>
+      <tr><td><code>dmg2john</code></td><td>Verschlüsselte macOS DMGs</td><td>16400/16700 (je nach Verfahren) — sonst direkt mit John angreifen</td></tr>
+    </table>
+
+    <div class="codewrap"><pre><code># PDF: nur Dateinamen-Präfix (alles vor dem ersten ':') entfernen
+pdf2john.pl Star.pdf | sed -E "s/^[^:]+://" > Star.pdf.hashcat
+
+# LibreOffice: Präfix UND irrelevanten Suffix abschneiden
+libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' > Numbers1.odt.hashcat
+
+# iWork (.pages / .numbers)
+iwork2john Poem.pages > Poem.pages.john
+sed -E "s/^[^:]+://" Poem.pages.john > Poem.pages.hashcat
+
+# KeePass
+keepass2john "Max Müller.kdbx" | sed -E "s/^[^:]+://" > MaxMueller.hashcat</code></pre></div>
+
+    <div class="callout tip"><div class="kicker">Modus checken</div>Nie raten: <code>hashcat --example-hashes</code> bzw. das <a href="https://hashcat.net/wiki/doku.php?id=example_hashes" target="_blank" rel="noopener">Hashcat-Wiki „Example Hashes“</a> zeigen exakt, wie ein gültiger Hash für den jeweiligen Modus aussehen muss — damit lässt sich die eigene <code>sed</code>-Bereinigung verifizieren, bevor man Zeit in einen Angriff steckt.</div>
+
+    <h2 id="hashcat">3. Hashcat Basics</h2>
+    <div class="codewrap"><pre><code>hashcat -m &lt;hash-modus&gt; -a &lt;angriffsmodus&gt; &lt;hashdatei&gt; &lt;angriffsquelle(n)&gt; [optionen]</code></pre></div>
+    <div class="pill-row">
+      <span class="pill">-O = optimierter Kernel (kürzere Passwörter, schneller)</span>
+      <span class="pill">-w 3 = Workload „high“</span>
+      <span class="pill">--show = bereits geknackte anzeigen</span>
+      <span class="pill">--status</span>
+      <span class="pill">--potfile-path</span>
+      <span class="pill">-force nur wenn nötig</span>
+    </div>
+
+    <h3 id="hc-modi">Angriffsmodi (<code>-a</code>)</h3>
+    <table>
+      <tr><th>Modus</th><th>Name</th><th>Beschreibung</th></tr>
+      <tr><td><code>-a0</code></td><td>Wörterbuch</td><td>Wortliste testen, optional mit Regeln <code>-r</code></td></tr>
+      <tr><td><code>-a1</code></td><td>Kombinationsangriff</td><td>Kreuzprodukt <strong>zweier</strong> Wörterbücher (z. B. Stadt+Stadt)</td></tr>
+      <tr><td><code>-a3</code></td><td>Brute-Force / Maske</td><td>alle Kandidaten gemäß Maske</td></tr>
+      <tr><td><code>-a6</code></td><td>Hybrid</td><td>Wort <strong>+</strong> Maske (Wort zuerst)</td></tr>
+      <tr><td><code>-a7</code></td><td>Hybrid</td><td>Maske <strong>+</strong> Wort (Maske zuerst)</td></tr>
+    </table>
+
+    <h3 id="hc-masken">Masken &amp; Zeichensätze</h3>
+    <table>
+      <tr><th>Platzhalter</th><th>Zeichensatz</th></tr>
+      <tr><td><code>?l</code></td><td><code>a-z</code></td></tr>
+      <tr><td><code>?u</code></td><td><code>A-Z</code></td></tr>
+      <tr><td><code>?d</code></td><td><code>0-9</code></td></tr>
+      <tr><td><code>?s</code></td><td>Sonderzeichen</td></tr>
+      <tr><td><code>?a</code></td><td><code>?l?u?d?s</code></td></tr>
+    </table>
+    <p>Eigene Zeichensätze mit <code>-1</code> … <code>-4</code>, referenziert als <code>?1</code>…<code>?4</code>:</p>
+    <div class="codewrap"><pre><code># Sonderzeichen-Klasse nur $, € und ! — Maske für 4 Stück davon am Ende
+hashcat -m 10700 star.hashcat -a3 -1 '$€!' "?u?l?u?l?d?d?d?d?1?1?1?1"</code></pre></div>
+
+    <h3 id="hc-regeln">Regeln (<code>-r</code>)</h3>
+    <table>
+      <tr><th>Regel</th><th>Name</th><th>Wirkung</th><th><code>p@ssW0rd</code> →</th></tr>
+      <tr><td><code>:</code></td><td>Nothing</td><td>Passthrough</td><td><code>p@ssW0rd</code></td></tr>
+      <tr><td><code>l</code></td><td>Lowercase</td><td>alles klein</td><td><code>p@ssw0rd</code></td></tr>
+      <tr><td><code>u</code></td><td>Uppercase</td><td>alles groß</td><td><code>P@SSW0RD</code></td></tr>
+      <tr><td><code>c</code></td><td>Capitalize</td><td>1. Buchstabe groß</td><td><code>P@ssw0rd</code></td></tr>
+      <tr><td><code>t</code></td><td>Toggle Case</td><td>Groß/Klein tauschen</td><td><code>P@SSw0RD</code></td></tr>
+      <tr><td><code>r</code></td><td>Reverse</td><td>Wort umkehren</td><td><code>dr0Wss@p</code></td></tr>
+      <tr><td><code>d</code></td><td>Duplicate</td><td>Wort verdoppeln</td><td><code>p@ssW0rdp@ssW0rd</code></td></tr>
+      <tr><td><code>$X</code></td><td>Append</td><td><code>X</code> anhängen</td><td><code>p@ssW0rdX</code></td></tr>
+      <tr><td><code>^X</code></td><td>Prepend</td><td><code>X</code> voranstellen</td><td><code>Xp@ssW0rd</code></td></tr>
+    </table>
+    <div class="codewrap"><pre><code>hashcat -m 0 hash.md5 -a0 /usr/share/wordlists/rockyou.txt \
+  -r /usr/share/hashcat/rules/best64.rule
+
+# zwei Regelsätze = Kreuzprodukt
+hashcat -m 1400 hash.sha256 candidates.txt -r number_prepend.rule -r sc_append.rule</code></pre></div>
+    <div class="callout warn"><div class="kicker">Duplikate vermeiden</div>Im Kreuzprodukt keine redundanten Regeln erzeugen — <code>$1:</code> und <code>:$1</code> liefern dasselbe Ergebnis, kosten aber doppelt Rechenzeit.</div>
+
+    <h3 id="hc-stdout">Wortlisten bauen (<code>--stdout</code>)</h3>
+    <p>Hashcat kann Kandidaten nur <em>ausgeben</em> statt anzugreifen — nützlich, um Zwischenwörterbücher zu bauen (z. B. Stadt×Stadt-Kombinationen).</p>
+    <div class="codewrap"><pre><code># Kreuzprodukt zweier Städtelisten, ohne Trenner
+hashcat --stdout staedte.txt staedte.txt -j '$-' | tr -d '-' > staedte-kombiniert.txt
+# → BerlinHamburg, BerlinMuenchen, ...</code></pre></div>
+
+    <h2 id="john">John the Ripper</h2>
+    <p>Primär für Hash-Extraktion (<code>*2john</code>) sowie für Hash-Typen, die hashcat nicht kennt.</p>
+    <div class="codewrap"><pre><code>john hash.john --wordlist=/usr/share/wordlists/rockyou.txt --rules=best64
+john --show hash.john          # geknackte anzeigen
+john --format=Raw-SHA256 hash.txt   # Format erzwingen, falls Auto-Detect danebenliegt</code></pre></div>
+
+    <h2 id="prince">Princeprocessor</h2>
+    <p>Erzeugt aus Fragmenten einer Wortliste alle Kombinationen (PRINCE-Algorithmus) — extrem nützlich für OSINT-Wortlisten (Namen, Städte, Zahlen aus einem Profil), lässt sich direkt an hashcat pipen.</p>
+    <div class="codewrap"><pre><code>princeprocessor --pw-min=6 --pw-max=16 osint_fragmente.txt \
+  | hashcat -m 13400 MaxMueller.hashcat -r number_prepend.rule -r sc_append.rule</code></pre></div>
+    <table>
+      <tr><th>Parameter</th><th>Wirkung</th></tr>
+      <tr><td><code>--pw-min</code> / <code>--pw-max</code></td><td>Länge der erzeugten Kandidaten</td></tr>
+      <tr><td><code>--elem-cnt-min/max</code></td><td>Anzahl Fragmente pro Kandidat</td></tr>
+      <tr><td><code>--keyspace</code></td><td>nur Größe des Suchraums ausgeben</td></tr>
+      <tr><td><code>--case-permute</code></td><td>Groß/Klein des 1. Buchstabens permutieren</td></tr>
+    </table>
+
+    <h2 id="verifikation">4. Verifikation &amp; False Positives</h2>
+    <div class="callout warn">
+      <div class="kicker">Insbesondere bei OpenSSL <code>enc</code></div>
+      Ein Kandidat meldet „Erfolg", wenn das <strong>PKCS#7-Padding</strong> der letzten 1–16 Byte zufällig gültig ist — ohne dass der Klartext stimmt. Wahrscheinlichkeit eines Zufallstreffers ≈ 1/256 pro Kandidat → bei größeren Kandidatenlisten sind mehrere Scheintreffer normal.
+      <br><br>
+      Immer den entschlüsselten <em>Inhalt</em> prüfen (<code>file</code> auf die Ausgabe, erwartete Magic Bytes, lesbarer Text statt Binärmüll) — nicht nur den Exit-Code von <code>openssl</code>. Gleiches Prinzip bei Archiven/Containern ohne Integritätsprüfung: erst der erfolgreiche Entpack-/Mount-Vorgang zählt.
+    </div>
+
+    <h2>Hands-On je Aufgabentyp</h2>
+    <p class="hint">Jede Karte: kurze Einordnung, konkrete Befehlskette, typische Stolperfalle.</p>
+    <div class="toolbar-row">
+      <button id="openAll">Alle aufklappen</button>
+      <button id="closeAll">Alle zuklappen</button>
+    </div>
+    <div id="tasks"></div>
+
+    <h2 id="wortlisten">Wortlisten &amp; Tools</h2>
+    <table>
+      <tr><th>Quelle</th><th>Einsatz</th></tr>
+      <tr><td><code>/usr/share/wordlists/rockyou.txt</code> (Kali, ggf. <code>gunzip</code>)</td><td>Standard-Startpunkt für reale Passwörter</td></tr>
+      <tr><td><code>/usr/share/dict/cracklib-small</code>, <code>/usr/share/dict/wordlist-probable.txt</code></td><td>Kleine, schnelle Basiswortlisten (Kali)</td></tr>
+      <tr><td><code>/usr/share/wordlists/metasploit/*.txt</code></td><td>Spezialisierte Listen (Standard-Creds, Namen, …)</td></tr>
+      <tr><td><a href="https://github.com/danielmiessler/SecLists" target="_blank" rel="noopener">SecLists</a></td><td>Größte kuratierte Sammlung — Passwords/, Usernames/, Languages/German/, Fuzzing/ …</td></tr>
+      <tr><td><a href="https://weakpass.com" target="_blank" rel="noopener">weakpass.com</a></td><td>Riesige zusammengeführte Leak-Wortlisten, direkt downloadbar, teils schon nach Muster/Rules sortiert</td></tr>
+      <tr><td><a href="https://crackstation.net/buy-crackstation-wordlist-password-cracking-dictionary.htm" target="_blank" rel="noopener">CrackStation Dictionary</a></td><td>~15 GB kombiniertes Wörterbuch aus Leaks</td></tr>
+      <tr><td><a href="https://haveibeenpwned.com/Passwords" target="_blank" rel="noopener">HIBP Pwned Passwords</a></td><td>Reale, tatsächlich geleakte Passwörter (NTLM/SHA1-sortiert, riesig)</td></tr>
+      <tr><td><a href="https://hashcat.net/wiki/doku.php?id=rule_based_attack" target="_blank" rel="noopener">Hashcat-Regeln</a> (<code>/usr/share/hashcat/rules/</code>)</td><td><code>best64.rule</code>, <code>rockyou-30000.rule</code>, <code>dive.rule</code> — vortrainierte Mangling-Regeln</td></tr>
+      <tr><td><a href="https://github.com/digininja/CeWL" target="_blank" rel="noopener">CeWL</a></td><td>Custom-Wortliste aus einer Website/Profil crawlen (OSINT-Wörterbuch)</td></tr>
+      <tr><td><a href="https://hashcat.net/wiki/doku.php?id=example_hashes" target="_blank" rel="noopener">Hashcat Example Hashes</a></td><td>Referenz: korrektes Format je <code>-m</code>-Modus</td></tr>
+      <tr><td><a href="https://github.com/noraj/haiti" target="_blank" rel="noopener">haiti</a> / <a href="https://github.com/psypanda/hashID" target="_blank" rel="noopener">hashID</a></td><td>Hash-Typ aus einem rohen Hash-String raten, wenn unklar</td></tr>
+    </table>
+
+    <h2 id="doku">Doku-Vorlage (Lösungsweg)</h2>
+    <p>Pro Aufgabe verlangt: Vorbereitung, Angriff, Passwort, Dauer. Vorlage zum Ausfüllen:</p>
+    <div class="codewrap"><pre><code>## Aufgabe: &lt;Dateiname&gt;
+
+**Vorbereitung**
+- Analyse (Dateityp / erzeugende Software):
+- Hash-Extraktion (Tool + Kommando):
+- Hash-Aufbereitung für hashcat (Modus -m, sed-Cleanup):
+- Wörterbuch-Quelle(n):
+- Wörterbuch-Erstellung (falls custom gebaut):
+- Tooling-Setup (Besonderheiten):
+
+**Angriff**
+- Schritte / Kommando(s):
+- Gefundenes Passwort:
+- Dauer der Suche: ca. __ min</code></pre></div>
+
+  </main>
+</div>
+
+<footer>
+  Persönliches Cheatsheet zur Vorbereitung auf das bewertete Lab „Passwortwiederherstellung" (W3WI_SE411, DHBW Mannheim, Prof. Dr. Michael Eichberg). Nur zu Übungs-/Ausbildungszwecken auf eigenen bzw. ausdrücklich freigegebenen Systemen — § 202a StGB beachten.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  var TASKS = [
+    {
+      id: "numbers-poem", tool: "libreoffice2john / iwork2john · -m 18400 / 23300",
+      title: "1 · Numbers&lt;X&gt; (.odt/.ods) &amp; Poem.pages",
+      body: `
+        <p>Keine Kontextinfos vorhanden → allg. Best Practices. <strong>Wichtiger erster Schritt:</strong> Dateiendung nicht glauben — die <code>Numbers&lt;X&gt;</code>-Dateien sind trotz des Namens echte <strong>LibreOffice/ODF-Dateien</strong> (<code>.odt</code>/<code>.ods</code>), <code>Poem.pages</code> ist eine echte <strong>Apple-Pages</strong>-Datei. Erst <code>file</code>, dann das passende Tool wählen.</p>
+        <div class="codewrap"><pre><code>file Numbers1.odt Poem.pages
+
+# ODF (Numbers&lt;X&gt;)
+libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt; n1.hashcat
+hashcat -m 18400 n1.hashcat -a0 /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule
+
+# Apple Pages (Poem.pages)
+iwork2john Poem.pages | sed -E "s/^[^:]+://" &gt; poem.hashcat
+hashcat -m 23300 poem.hashcat -a0 /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+        <p>Bringt Wortliste+Regeln nichts: auf Hybrid (<code>-a6</code>/<code>-a7</code>) oder reine Maske (<code>-a3</code>) mit generischen Mustern ausweichen (Wort+Jahr, Wort+4 Ziffern).</p>
+      `
+    },
+    {
+      id: "hurdle", tool: "7z2john · -m 11600",
+      title: "2 · Hurdle.jpg.7z",
+      body: `
+        <p>Aus einer wiederhergestellten <code>Passworte.txt</code> liegt eine <strong>kleine, exakte Kandidatenliste</strong> vor — Paradebeispiel für einen gezielten Wörterbuchangriff statt Brute-Force.</p>
+        <div class="codewrap"><pre><code>7z2john.pl Hurdle.jpg.7z &gt; hurdle.john
+sed -E "s/^[^:]+://" hurdle.john &gt; hurdle.hashcat
+hashcat -m 11600 hurdle.hashcat -a0 Passworte.txt \
+  -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+        <div class="callout tip"><div class="kicker">Warum Regeln trotzdem drauf</div>Bei einer so kleinen Liste kostet ein Regelsatz praktisch nichts, deckt aber Groß-/Kleinschreibungs- und Leerzeichen-Varianten ab (<code>Der Lauf</code> vs. <code>derlauf</code> vs. <code>DerLauf</code>) — bei 5 Wörtern lieber einmal zu viel testen als eine Variante übersehen.</div>
+      `
+    },
+    {
+      id: "star", tool: "pdf2john · -m 10500/10700",
+      title: "3 · Star.pdf",
+      body: `
+        <p>Policy bekannt: ≥2 Großbuchst., ≥2 Kleinbuchst., ≥4 Ziffern, ≥4 Sonderzeichen (<code>$ € !</code>, oft wiederholt), Mindestlänge 16, Muster <code>&lt;Jahr&gt;&lt;Stadt1&gt;&lt;Stadt2&gt;&lt;Sonderzeichen&gt;</code>. Das ist ein <strong>Kombinations- + Masken-Fall</strong>, kein Blindangriff.</p>
+        <div class="codewrap"><pre><code>pdf2john.pl Star.pdf | sed -E "s/^[^:]+://" &gt; star.hashcat
+# pdf2john/hashcat --example-hashes verrät ob Modus 10500 (RC4/AES-128) oder 10700 (AES-256) passt
+
+# 1) Städteliste (große dt. Städte) x sich selbst kombinieren
+hashcat --stdout staedte.txt staedte.txt -j '$-' | tr -d '-' &gt; stadt-kombis.txt
+
+# 2) Jahreszahl voranstellen (Hybrid, Maske zuerst)
+hashcat -m 10700 star.hashcat -a7 stadt-kombis.txt "202?d" -1 "0123456789"
+
+# 3) Sonderzeichen-Suffix ergänzen (eigener Zeichensatz nur $/€/!)
+hashcat -m 10700 star.hashcat -a6 jahr-stadt-kombis.txt "?1?1?1?1" -1 '$€!'</code></pre></div>
+        <p>Alternativ alles in einem <code>-a3</code>-Maskenlauf, wenn die Städteliste kurz genug ist, um sie als Wortliste statt als Maskenteil zu behandeln (i. d. R. schneller: erst kombinieren, dann anhängen).</p>
+      `
+    },
+    {
+      id: "mysheet", tool: "iwork2john · -m 23300",
+      title: "4 · MySheet.numbers",
+      body: `
+        <p>Nur Buchstaben, korrekte Groß-/Kleinschreibung (<code>Frankfurt</code>), Wörter oft zusammengezogen (<code>HausMaus</code>, <code>AffeAffe</code>, <code>alleLieben</code>), Mindestlänge 8. → <strong>Kombinationsangriff</strong> einer Wortliste mit sich selbst, plus Capitalize-Regel.</p>
+        <div class="codewrap"><pre><code>iwork2john MySheet.numbers | sed -E "s/^[^:]+://" &gt; mysheet.hashcat
+
+# Basisliste: Substantive/Namen, korrekt großgeschrieben
+hashcat -m 23300 mysheet.hashcat -a1 woerter.txt woerter.txt
+
+# Falls Basisliste kleingeschrieben vorliegt: erst Capitalize-Regel anwenden
+hashcat --stdout woerter_lower.txt -r <(echo c) &gt; woerter_cap.txt
+hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre></div>
+      `
+    },
+    {
+      id: "javahash", tool: "kein Krypto-Hash → eigenes Skript",
+      title: "5 · JavaHashcodes.txt",
+      body: `
+        <p>Javas <code>String.hashCode()</code> ist <strong>kein</strong> kryptografischer Hash — 32 Bit, kollisionsanfällig, keine Salts, kein hashcat-Modus dafür. Richtiger Weg: die Formel selbst nachbauen und Kandidaten durchtesten.</p>
+        <div class="codewrap"><pre><code>s[0]*31^(n-1) + s[1]*31^(n-2) + ... + s[n-1]   (32-bit signed, mit Overflow)</code></pre></div>
+        <div class="codewrap"><pre><code>def java_hashcode(s: str) -&gt; int:
+    h = 0
+    for c in s:
+        h = (31 * h + ord(c)) &amp; 0xFFFFFFFF
+    return h - 0x100000000 if h &gt;= 0x80000000 else h
+
+target = {-1200548278, 1234567}  # aus JavaHashcodes.txt geladen
+with open("/usr/share/wordlists/rockyou.txt", encoding="latin-1") as f:
+    for word in f:
+        word = word.rstrip("\\n")
+        if java_hashcode(word) in target:
+            print("Treffer:", word)</code></pre></div>
+        <div class="callout warn"><div class="kicker">Kollisionen einplanen</div>32 Bit ⇒ nach ca. <code>2^16</code> Kandidaten wird ein Kollisionstreffer wahrscheinlich (Geburtstagsparadoxon). Jeden Treffer <strong>gegen das reale System/den realen Kontext verifizieren</strong>, nicht blind als „das“ Passwort übernehmen. Reines Python ist für Millionen Kandidaten langsam — mit <code>multiprocessing</code> parallelisieren oder in C/Java nachbauen, wenn die Wortliste groß ist.</div>
+      `
+    },
+    {
+      id: "keepass", tool: "keepass2john · -m 13400",
+      title: "6 · Max Müller.kdbx",
+      body: `
+        <p>Profilbeschreibung (<code>Max Müller.md</code>) als OSINT-Basis nutzen: Namen, Geburtsdaten, Orte, Hobbys, Haustiere → eigene Fragmentliste bauen, mit Princeprocessor kombinieren.</p>
+        <div class="codewrap"><pre><code>keepass2john "Max Müller.kdbx" | sed -E "s/^[^:]+://" &gt; kdbx.hashcat
+
+# Fragmente aus dem Profil von Hand in osint.txt sammeln: Vornamen, Nachname,
+# Geburtsjahr/-datum in mehreren Formaten, Stadt, Straße, Haustiername, ...
+princeprocessor --pw-min=6 --pw-max=20 osint.txt \
+  | hashcat -m 13400 kdbx.hashcat -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+        <div class="callout tip"><div class="kicker">Datumsformate nicht vergessen</div>Geburtsdaten in mehreren Schreibweisen in die Fragmentliste aufnehmen: <code>1990</code>, <code>90</code>, <code>19900504</code>, <code>04051990</code>, <code>0405</code> — Menschen variieren das kaum, aber unvorhersehbar genug, dass man alle Varianten braucht.</div>
+      `
+    },
+    {
+      id: "passwords-pages", tool: "iwork2john · -m 23300",
+      title: "7 · Passwords.pages",
+      body: `
+        <p>Der Dateiname ist ein Köder — nicht davon ausgehen, dass das Passwort trivial ist, nur weil die Datei „Passwords" heißt. Trotzdem lohnt sich kurz ein Trivial-Check (leer, <code>password</code>, Dateiname selbst), bevor der Standardweg läuft.</p>
+        <div class="codewrap"><pre><code>iwork2john Passwords.pages | sed -E "s/^[^:]+://" &gt; passwords.hashcat
+hashcat -m 23300 passwords.hashcat -a0 /usr/share/wordlists/rockyou.txt \
+  -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+      `
+    },
+    {
+      id: "openssl", tool: "openssl enc -aes-256-cbc -md sha1 (kein hashcat-Modus)",
+      title: "8 · personal_information.aes256cbc_sha1.encrypted",
+      body: `
+        <p>Dateiname verrät das Verfahren: <strong>OpenSSL <code>enc -aes-256-cbc -md sha1</code></strong> — die klassische OpenSSL-CLI-Kombi mit dem alten SHA1-basierten <code>EVP_BytesToKey</code>-KDF (Default vor OpenSSL 1.1.0). Kein hashcat-Modus nötig/vorgesehen — direkt mit der mitgelieferten Kandidatenliste gegen <code>openssl</code> selbst testen.</p>
+        <div class="codewrap"><pre><code># Kopfbytes prüfen — "Salted__" (0x53616c7465645f5f) deutet auf klassisches OpenSSL-Salting hin
+xxd personal_information.aes256cbc_sha1.encrypted | head -1
+
+while IFS= read -r pass; do
+  if openssl enc -d -aes-256-cbc -md sha1 -pass "pass:$pass" \
+      -in personal_information.aes256cbc_sha1.encrypted \
+      -out /tmp/try.bin 2&gt;/dev/null; then
+    typ=$(file -b /tmp/try.bin)
+    echo "$typ" | grep -qv "^data$" &amp;&amp; echo "KANDIDAT: '$pass' -&gt; $typ"
+  fi
+done &lt; personal_information.aes256cbc_sha1.password_candidates.txt</code></pre></div>
+        <div class="callout warn"><div class="kicker">Padding-Oracle nicht vergessen</div><code>openssl</code> meldet auch bei falschem Passwort gelegentlich „Erfolg" (gültiges PKCS#7-Padding per Zufall, ~1/256). Jeden „Kandidat"-Treffer über den <code>file</code>-Typ bzw. lesbaren Inhalt verifizieren, siehe Abschnitt <a href="#verifikation">Verifikation</a>.</div>
+      `
+    }
+  ];
+
+  var tasksEl = document.getElementById("tasks");
+  var navEl = document.getElementById("tasknav");
+  TASKS.forEach(function(t, i){
+    var card = document.createElement("div");
+    card.className = "task-card";
+    card.id = t.id;
+    card.innerHTML =
+      '<div class="task-head" role="button" tabindex="0">' +
+        '<span class="tnum">'+ (i+1) +'</span>' +
+        '<span class="ttitle">'+ t.title +'</span>' +
+        '<span class="ttool">'+ t.tool +'</span>' +
+        '<span class="chev">▸</span>' +
+      '</div>' +
+      '<div class="task-body"><div class="task-body-inner">'+ t.body +'</div></div>';
+    tasksEl.appendChild(card);
+
+    var head = card.querySelector(".task-head");
+    var body = card.querySelector(".task-body");
+    function toggle(){
+      var open = card.classList.toggle("open");
+      body.style.maxHeight = open ? body.scrollHeight + "px" : "0px";
+    }
+    head.addEventListener("click", toggle);
+    head.addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } });
+
+    var navLink = document.createElement("a");
+    navLink.href = "#" + t.id;
+    var tmp = document.createElement("div");
+    tmp.innerHTML = t.title;
+    navLink.textContent = tmp.textContent;
+    navEl.appendChild(navLink);
+  });
+
+  document.getElementById("openAll").addEventListener("click", function(){
+    document.querySelectorAll(".task-card").forEach(function(c){
+      c.classList.add("open");
+      var b = c.querySelector(".task-body");
+      b.style.maxHeight = b.scrollHeight + "px";
+    });
+  });
+  document.getElementById("closeAll").addEventListener("click", function(){
+    document.querySelectorAll(".task-card").forEach(function(c){
+      c.classList.remove("open");
+      c.querySelector(".task-body").style.maxHeight = "0px";
+    });
+  });
+
+  // copy buttons on every code block
+  document.querySelectorAll("pre").forEach(function(pre){
+    var wrap = document.createElement("div");
+    wrap.className = "codewrap";
+    if(!pre.parentElement.classList.contains("codewrap")){
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+    }
+    var btn = document.createElement("button");
+    btn.className = "copybtn";
+    btn.textContent = "Kopieren";
+    btn.addEventListener("click", function(){
+      var text = pre.innerText;
+      navigator.clipboard.writeText(text).then(function(){
+        btn.textContent = "Kopiert!";
+        setTimeout(function(){ btn.textContent = "Kopieren"; }, 1200);
+      });
+    });
+    (pre.parentElement.classList.contains("codewrap") ? pre.parentElement : wrap).appendChild(btn);
+  });
+
+  // theme toggle
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("themeBtn");
+  function applyTheme(t){
+    if(t){ root.setAttribute("data-theme", t); } else { root.removeAttribute("data-theme"); }
+  }
+  try {
+    var saved = localStorage.getItem("theme");
+    if(saved) applyTheme(saved);
+  } catch(e){}
+  themeBtn.addEventListener("click", function(){
+    var current = root.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var next = current === "dark" ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem("theme", next); } catch(e){}
+  });
+
+  // mobile menu
+  var menuBtn = document.getElementById("menuBtn");
+  var sidebar = document.getElementById("sidebar");
+  menuBtn.addEventListener("click", function(){ sidebar.classList.toggle("open"); });
+  sidebar.querySelectorAll("a").forEach(function(a){
+    a.addEventListener("click", function(){ sidebar.classList.remove("open"); });
+  });
+
+  // active section highlight
+  var sections = Array.prototype.slice.call(document.querySelectorAll("h2[id], h3[id]"));
+  var navLinks = Array.prototype.slice.call(sidebar.querySelectorAll("a"));
+  function onScroll(){
+    var pos = window.scrollY + 90;
+    var current = null;
+    sections.forEach(function(s){ if(s.offsetTop <= pos) current = s.id; });
+    navLinks.forEach(function(a){
+      a.classList.toggle("active", a.getAttribute("href") === "#" + current);
+    });
+  }
+  document.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  // search filter
+  var searchEl = document.getElementById("search");
+  searchEl.addEventListener("input", function(){
+    var q = searchEl.value.trim().toLowerCase();
+    document.querySelectorAll(".task-card").forEach(function(c){
+      var hay = c.textContent.toLowerCase();
+      var match = !q || hay.indexOf(q) !== -1;
+      c.classList.toggle("dimmed", !match);
+      if(q && match){
+        c.classList.add("open");
+        var b = c.querySelector(".task-body");
+        b.style.maxHeight = b.scrollHeight + "px";
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
