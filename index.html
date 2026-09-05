@@ -162,7 +162,7 @@ footer{border-top:1px solid var(--border); padding:2rem; text-align:center; colo
   </div>
   <div class="spacer"></div>
   <div class="searchwrap">
-    <input id="search" type="search" placeholder="Global suchen … z.B. „pdf2john“, „argon2“" autocomplete="off">
+    <input id="search" type="search" placeholder="Global suchen … z.B. „pdf2john", „argon2"" autocomplete="off">
     <div class="searchresults" id="searchresults" hidden></div>
   </div>
   <button class="iconbtn" id="themeBtn" title="Theme wechseln">◐</button>
@@ -191,6 +191,8 @@ footer{border-top:1px solid var(--border); padding:2rem; text-align:center; colo
     </div>
 
     <h2>0. Analyse</h2>
+    <p><strong>Warum?</strong> Viele Dateitypen trügen — ein <code>.odt</code> kann eine LibreOffice-ODF-Datei sein, eine Apple-Numbers-Datei oder etwas völlig anderes. Die Dateiendung allein sagt nichts über den internen Verschlüsselungsmechanismus aus. Das Bestimmung des korrekten Dateityps ist der wichtigste Schritt, weil er den Hash-Modus (<code>-m</code>) und das Extraktionstool vorgibt. Ein falscher Modus verschwendet Rechenzeit oder scheitert komplett.</p>
+    <p><strong>Was macht <code>file</code>?</strong> Es liest die ersten Bytes (Magic Bytes) der Datei und vergleicht sie mit einer Datenbank bekannter Signaturen — unabhängig von der Dateiendung. <strong>Was macht <code>binwalk -E</code>?</strong> Es berechnet die Entropie in 8-Byte-Blöcken und erzeugt ein ASCII-Art-Diagramm: hohe, gleichmäßige Entropie (~8.0 Bits/Byte) bedeutet, dass die Daten verschlüsselt oder komprimiert sind (kein Muster erkennbar). Niedrige/schwankende Entropie deutet auf Klartext oder teilstrukturierte Daten hin. <strong>Was macht <code>xxd</code>?</strong> Zeigt den hexadezimalen Byte-Inhalt an — damit kann man Magic Bytes manuell prüfen, wenn <code>file</code> keinen klaren Treffer liefert.</p>
     <div class="codewrap"><pre><code>file Unbekannt.dat
 binwalk -E Unbekannt.dat        # Entropie — hoch &amp; flach = verschlüsselt/komprimiert
 xxd Unbekannt.dat | head        # Magic Bytes von Hand prüfen</code></pre></div>
@@ -206,13 +208,31 @@ xxd Unbekannt.dat | head        # Magic Bytes von Hand prüfen</code></pre></div
     <p class="hint">Muster: <code>&lt;typ&gt;2john &lt;datei&gt; &gt; &lt;datei&gt;.john</code>. Aufklappen für ein Beispiel an einer der Aufgaben-Dateien.</p>
     <div id="acc-extraction"></div>
 
-    <div class="grouptitle">John-Hash → Hashcat-Format (sed)</div>
-    <p>Die <code>*2john</code>-Ausgabe ist John-Syntax (<code>dateiname:$hash$...[:zusatz]</code>). Für hashcat muss i. d. R. mindestens der Dateiname-Präfix weg; manche Formate haben zusätzlich einen irrelevanten Suffix.</p>
+    <div class="grouptitle">Sed-Workflow: John-Hash → Hashcat-Format</div>
+    <p>Die <code>*2john</code>-Ausgabe ist John-Syntax (<code>dateiname:$hash$...[:zusatz]</code>). Für hashcat muss man den Hash isolieren — die meisten Tools liefern mehr. <strong>Dein Standardworkflow:</strong></p>
+    <div class="workflow">
+      <div class="step"><div class="n">Step 1</div><h4>John extrahieren</h4><p><code>*2john Datei &gt; name.hash</code><br>Original-Hash sichern — nie überschreiben, falls John parallel gebraucht wird.</p></div>
+      <div class="step"><div class="n">Step 2</div><h4>Sed bereinigen</h4><p><code>sed ... name.hash &gt; name.hashcat</code><br>Hash-String für hashcat isolieren — Präfix und ggf. Suffix entfernen.</p></div>
+      <div class="step"><div class="n">Step 3</div><h4>Hashcat angreifen</h4><p><code>hashcat -m &lt;modus&gt; name.hashcat ...</code><br>Die bereinigte Datei wird als Input übergeben.</p></div>
+    </div>
     <div class="codewrap"><pre><code># Standardfall: nur Präfix (alles vor dem ersten ':') entfernen — reicht für die meisten Formate
-&lt;tool&gt;2john Datei.ext | sed -E "s/^[^:]+://" &gt; datei.hashcat
+pdf2john.pl Star.pdf > star.john          # Schritt 1: John-Extrakt
+sed -E "s/^[^:]+://" star.john > star.hashcat   # Schritt 2: für hashcat aufbereiten
+# hashcat -m 10700 star.hashcat -a3 ...         # Schritt 3: Angriff
 
 # LibreOffice/ODF: zusätzlich den irrelevanten Suffix abschneiden
-libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt; Numbers1.hashcat</code></pre></div>
+#   Das Suffix (:::::Typname) nach dem Hash ist für hashcat irrelevant.
+#   Prüfsumme via -e separates Script entfernen:
+libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' > Numbers1.hashcat
+
+# KeePass (.kdbx): sed -E "s/^[^:]+://" reicht — Hash-Payload nach dem ersten ':'
+
+# 7-Zip: sed -E "s/^[^:]+://" — Hash-Payload nach dem ersten ':'
+
+# Allgemeine Merkregel:
+#   - Hashcat braucht NUR den Hash-String (alles nach dem ersten ':')
+#   - John braucht den vollen Output (mit Dateinamen)
+#   - Die .john-Datei immer behalten — für John-Angriffe oder Debugging</code></pre></div>
     <div class="callout tip"><div class="kicker">Format verifizieren</div>Vor dem Angriff <code>hashcat --example-hashes</code> bzw. das Hashcat-Wiki „Example Hashes" gegen den eigenen bereinigten Hash halten — spart Zeit, die man sonst in einen falsch formatierten Angriff steckt.</div>
 
     <div class="grouptitle">John — direkter Angriff</div>
@@ -220,6 +240,7 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
 
     <h2>2. Hashcat — Grundsyntax</h2>
     <div class="codewrap"><pre><code>hashcat -m &lt;hash-modus&gt; -a &lt;angriffsmodus&gt; &lt;hashdatei&gt; &lt;angriffsquelle(n)&gt; [optionen]</code></pre></div>
+    <p><strong>Was ist was:</strong> <code>-m</code> legt fest, wie hashcat den Hash interpretiert (MD5 = 0, SHA-256 = 1400, 7z = 11600, etc.). <code>-a</code> bestimmt die Angriffsmethode (Wörterbuch, Brute-Force, Hybrid, Kombination). Die Hashdatei enthält den zu knackenden Hash (zeilenweise). Angriffsquellen sind Wortlisten, Masken oder Sprachregeln.</p>
     <div class="toolbar-row" style="flex-wrap:wrap;">
       <span class="hint">-O optimierter Kernel</span>
       <span class="hint">·</span><span class="hint">-w 3 Workload high</span>
@@ -227,6 +248,8 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
       <span class="hint">·</span><span class="hint">--status</span>
       <span class="hint">·</span><span class="hint">--potfile-path</span>
       <span class="hint">·</span><span class="hint">--example-hashes</span>
+      <span class="hint">·</span><span class="hint">--stdout</span>
+      <span class="hint">·</span><span class="hint">--benchmark / -b</span>
     </div>
 
     <div class="grouptitle">Angriffsmodi (-a)</div>
@@ -261,6 +284,9 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
     <div class="grouptitle">Wortlisten bauen (--stdout, Princeprocessor)</div>
     <div id="acc-hc-build"></div>
 
+    <div class="grouptitle">Benchmark: Eigene Hardware messen</div>
+    <div id="acc-hc-benchmark"></div>
+
     <div class="callout">
       <div class="kicker">Verifikation nicht vergessen</div>
       Ein gemeldeter „Treffer" ist erst dann ein Treffer, wenn die Datei sich damit wirklich öffnet/entpackt/mountet. Konkrete Fallstricke (v. a. OpenSSL-Padding) siehe <a href="#" data-goto="sonder">Sonderheiten</a>.
@@ -276,6 +302,7 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
   <!-- ============================= 3. RESSOURCEN ============================= -->
   <section class="view" id="ressourcen" data-label="Ressourcen">
     <p class="hint">Schnellzugriff für Rückfragen zu Fehlermeldungen, Befehlen oder Hash-Formaten — und für Moodle.</p>
+    <div class="grouptitle">KI-Helfer &amp; Moodle</div>
     <div class="linkgrid">
       <a class="linkcard" href="https://chatgpt.com" target="_blank" rel="noopener">
         <div class="lc-name">ChatGPT</div>
@@ -298,14 +325,58 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
         <div class="lc-url">moodle.dhbw.de</div>
       </a>
     </div>
+    <div class="grouptitle">Deutsche Wortlisten (modern, für Passwort-Cracking)</div>
+    <div class="linkgrid">
+      <a class="linkcard" href="https://github.com/danielmiessler/SecLists/tree/master/Passwords/Languages" target="_blank" rel="noopener">
+        <div class="lc-name">SecLists — Languages/German</div>
+        <div class="lc-desc">Deutsche Wörter, Beliebte Vornamen, typische Adjektive — curated, sofort nutzbar. Enthält z.B. <code>german.dic</code> (~240k Wörter).</div>
+        <div class="lc-url">github.com/danielmiessler/SecLists</div>
+      </a>
+      <a class="linkcard" href="https://github.com/berzerk0/Probable-Wordlists/tree/master/Real-Passwords/German" target="_blank" rel="noopener">
+        <div class="lc-name">Probable-Wordlists — German</div>
+        <div class="lc-desc">Aus Leaks gefilterte deutsche Passwörter mit realistischen Strukturen (Kapitalisierung, Zahlen, Sonderzeichen). Enthält <code>deTopMillion</code> (~1M).</div>
+        <div class="lc-url">github.com/berzerk0/Probable-Wordlists</div>
+      </a>
+      <a class="linkcard" href="https://w33ble.github.io/passphrase-wordlist/" target="_blank" rel="noopener">
+        <div class="lc-name">Diceware-German (DE)</div>
+        <div class="lc-desc">Deutsche Diceware-Listen (EFF-Format), nutzbar als Eingabe für Princeprocessor-Hybridangriffe.</div>
+        <div class="lc-url">w33ble.github.io/passphrase-wordlist</div>
+      </a>
+    </div>
+    <div class="grouptitle">Tool-Dokumentation &amp; Referenzen</div>
+    <div class="linkgrid">
+      <a class="linkcard" href="https://hashcat.net/wiki/doku.php?id=example_hashes" target="_blank" rel="noopener">
+        <div class="lc-name">Hashcat Example Hashes</div>
+        <div class="lc-desc">Referenz für korrektes Format je <code>-m</code>-Modus.</div>
+        <div class="lc-url">hashcat.net/wiki</div>
+      </a>
+      <a class="linkcard" href="https://hashcat.net/wiki/doku.php?id=rule_based_attack" target="_blank" rel="noopener">
+        <div class="lc-name">Hashcat Regeln-Doku</div>
+        <div class="lc-desc">Regelsyntax, eingebaute Listen, eigene Rulefiles erstellen.</div>
+        <div class="lc-url">hashcat.net/wiki</div>
+      </a>
+      <a class="linkcard" href="https://github.com/openwall/john" target="_blank" rel="noopener">
+        <div class="lc-name">John the Ripper (jumbo)</div>
+        <div class="lc-desc">Alle *2john-Tools, aktuelle Version mit Argon2-Support.</div>
+        <div class="lc-url">github.com/openwall/john</div>
+      </a>
+      <a class="linkcard" href="https://www.kali.org/tools/hashcat/" target="_blank" rel="noopener">
+        <div class="lc-name">Hashcat auf Kali</div>
+        <div class="lc-desc">Installationshinweise, Version im Distro-Paket vs. aktuelles Release.</div>
+        <div class="lc-url">kali.org/tools/hashcat</div>
+      </a>
+    </div>
   </section>
 
   <!-- ============================= 4. DER REST ============================= -->
   <section class="view" id="rest" data-label="Der Rest">
-    <p class="hint">Alles, was nicht in Basics oder Sonderheiten passt: konkrete Aufgaben-Strategien, Wortlisten-Quellen, Doku-Vorlage.</p>
+    <p class="hint">Alles, was nicht in Basics oder Sonderheiten passt: konkrete Aufgaben-Strategien, Wortlisten-Quellen, Hash-Funktionen vs. KDFs, Doku-Vorlage.</p>
 
     <div class="grouptitle">Aufgaben-Strategien</div>
     <div id="acc-tasks"></div>
+
+    <div class="grouptitle">Hash-Funktionen vs. KDFs — Was du wissen musst</div>
+    <div id="acc-hash-vs-kdf"></div>
 
     <div class="grouptitle">Wortlisten &amp; Tools</div>
     <table>
@@ -319,7 +390,6 @@ libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt;
       <tr><td><a href="https://haveibeenpwned.com/Passwords" target="_blank" rel="noopener">HIBP Pwned Passwords</a></td><td>Reale, tatsächlich geleakte Passwörter</td></tr>
       <tr><td><a href="https://hashcat.net/wiki/doku.php?id=rule_based_attack" target="_blank" rel="noopener">Hashcat-Regeln</a> (<code>/usr/share/hashcat/rules/</code>)</td><td><code>best64.rule</code>, <code>rockyou-30000.rule</code>, <code>dive.rule</code></td></tr>
       <tr><td><a href="https://github.com/digininja/CeWL" target="_blank" rel="noopener">CeWL</a></td><td>Custom-Wortliste aus Website/Profil crawlen (OSINT)</td></tr>
-      <tr><td><a href="https://hashcat.net/wiki/doku.php?id=example_hashes" target="_blank" rel="noopener">Hashcat Example Hashes</a></td><td>Referenz: korrektes Format je <code>-m</code>-Modus</td></tr>
       <tr><td><a href="https://github.com/noraj/haiti" target="_blank" rel="noopener">haiti</a> / <a href="https://github.com/psypanda/hashID" target="_blank" rel="noopener">hashID</a></td><td>Hash-Typ aus rohem Hash-String raten</td></tr>
     </table>
 

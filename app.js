@@ -6,101 +6,227 @@
   // ===================================================================
 
   var EXTRACTION = [
-    { id:"ext-pdf", title:"pdf2john.pl", meta:"→ -m 10400/10500/10600/10700", body:
-      `<p>Für verschlüsselte PDFs. Der genaue hashcat-Modus hängt von der PDF-Revision/AES-Variante ab (steckt im Hash selbst — im Zweifel gegen <code>hashcat --example-hashes</code> abgleichen).</p>
-      <div class="codewrap"><pre><code>pdf2john.pl Star.pdf &gt; star.john
-sed -E "s/^[^:]+://" star.john &gt; star.hashcat</code></pre></div>` },
-    { id:"ext-7z", title:"7z2john.pl", meta:"→ -m 11600", body:
-      `<p>Für <code>.7z</code>-Archive.</p>
+    { id:"ext-pdf", title:"pdf2john.pl — Star.pdf", meta:"→ -m 10400–10700", body:
+      `<p><strong>Wofür:</strong> verschlüsselte PDF-Dateien. Der genaue hashcat-Modus hängt von der PDF-Revision/AES-Variante ab — er steckt im Hash selbst (P = RC4-128, ev. AES-256).</p>
+       <p><strong>Hintergrund der Aufgabe Star.pdf:</strong> Die PDF ist mit einer Policy-Maske verschlüsselt (<code>&lt;Jahr&gt;&lt;Stadt1&gt;&lt;Stadt2&gt;&lt;Sonderzeichen&gt;</code>), d. h. das Passwort folgt einem bekannten Muster, das sich als Masken-/Kombinationsangriff ausnutzen lässt. Du brauchst also den Hash, um mit <code>-a3</code>/<code>-a6</code>/<code>-a7</code> gezielt das Muster zu durchsuchen.</p>
+       <p><strong>Die Syntax im Detail:</strong></p>
+       <ul>
+         <li><code>pdf2john.pl Star.pdf</code> — liest die PDF-Datei, extrahiert den Verschlüsselungs-Hash, gibt ihn im John-Format aus.</li>
+         <li><code>&gt; star.john</code> — Umleitung in eine Datei. Der Name ist <em>deine</em> Wahl; John will die Original-Datei später anhand des Dateinamens im Hash wiederfinden.</li>
+         <li><code>sed -E "s/^[^:]+://"</code> — <code>/^[^:]+:/</code> sucht von Zeilenanfang alles bis zum ersten Doppelpunkt (das ist der Dateiname), <code>/</code> ersetzt es durch nichts (<code>//</code>). Ergebnis: nur noch der Hash-String.</li>
+       </ul>
+      <div class="codewrap"><pre><code># Schritt 1: John-Extrakt (Original-Hash mit Dateinamen)
+pdf2john.pl Star.pdf &gt; star.john
+# Schritt 2: sed — Dateinamen-Präfix entfernen, nur Hash übriglassen
+sed -E "s/^[^:]+://" star.john &gt; star.hashcat
+# Schritt 3: Angriff (später ausführlich unter "Basics → Angriffsmodi")
+# hashcat -m 10700 star.hashcat -a7 stadt-kombis.txt "202?d"</code></pre></div>
+      <div class="callout tip"><div class="kicker">Warum sed und nicht John direkt?</div>hashcat versteht die John-Ausgabe nicht — er erwartet <em>nur</em> den Hash, nichts anderes pro Zeile. Der Dateiname als Präfix würde den Hash ungültig machen.</div>` },
+    { id:"ext-7z", title:"7z2john.pl — Hurdle.jpg.7z", meta:"→ -m 11600", body:
+      `<p><strong>Wofür:</strong> 7-Zip-Archive. <code>Hurdle.jpg.7z</code> ist ein Bild-Archiv, das mit einem Passwort geschützt ist.</p>
+       <p><strong>Hintergrund:</strong> Für diese Aufgabe gibt es eine kleine, exakte Kandidatenliste (<code>Passworte.txt</code>), die du direkt als Wörterbuch einsetzen kannst — kein Brute-Force nötig.</p>
+       <p><strong>Syntax:</strong></p>
+       <ul>
+         <li><code>7z2john.pl Hurdle.jpg.7z</code> — liest das 7z-Archiv und extrahiert den CRC/Hash der verschlüsselten Header.</li>
+         <li><code>&gt; hurdle.john</code> — Ausgabe in Datei; die Präfix-Hash-Syntax wie bei PDF, nur der Modus ändert sich.</li>
+       </ul>
       <div class="codewrap"><pre><code>7z2john.pl Hurdle.jpg.7z &gt; hurdle.john
-sed -E "s/^[^:]+://" hurdle.john &gt; hurdle.hashcat</code></pre></div>` },
-    { id:"ext-zip", title:"zip2john", meta:"→ -m 17200/17225/13600", body:
-      `<p>Für <code>.zip</code>-Archive — nicht Teil der aktuellen Aufgaben, aber Standard-Repertoire (PKZIP klassisch vs. WinZip/AES unterscheiden sich im Modus).</p>
+sed -E "s/^[^:]+://" hurdle.john &gt; hurdle.hashcat
+# Angriff: hashcat -m 11600 hurdle.hashcat -a0 Passworte.txt</code></pre></div>` },
+    { id:"ext-zip", title:"zip2john — Archiv.zip", meta:"→ -m 17200–17230 / 13600", body:
+      `<p><strong>Wofür:</strong> ZIP-Archive — nicht Teil der aktuellen Aufgaben, aber Standard-Repertoire.</p>
+       <p><strong>Hintergrund:</strong> ZIP-Varianten unterscheiden sich im Hash-Modus: klassisches PKZIP (je nach Kompressionsverfahren <code>-m 17200/17210/17220/17225/17230</code>) vs. WinZip/AES (<code>-m 13600</code>). Der Hash selbst verrät die Variante — gegen <code>hashcat --example-hashes</code> abgleichen.</p>
+       <p><strong>Syntax-Hinweis:</strong> <code>zip2john</code> kann mehrere Dateien pro Archiv ausgeben — bei mehreren Treffern braucht hashcat eine Datei pro Zeile.</p>
       <div class="codewrap"><pre><code>zip2john Archiv.zip &gt; archiv.john
 sed -E "s/^[^:]+://" archiv.john &gt; archiv.hashcat</code></pre></div>` },
-    { id:"ext-keepass", title:"keepass2john", meta:"→ -m 13400", body:
-      `<p>Für KeePass-Datenbanken. <strong>Achtung bei neueren <code>.kdbx</code>-Versionen/Argon2</strong> — siehe <a href="#" data-goto="sonder">Sonderheiten</a>.</p>
+    { id:"ext-keepass", title:"keepass2john — Max Müller.kdbx", meta:"→ -m 13400", body:
+      `<p><strong>Wofür:</strong> KeePass-Datenbanken (<code>.kdbx</code>). Hier <code>Max Müller.kdbx</code>.</p>
+       <p><strong>Hintergrund:</strong> Die KDBX-Version entscheidet über den KDF (siehe <a href="#" data-goto="sonder">Sonderheiten → KDBX</a>): KDBX3 = AES-KDF, KDBX4 = AES-KDF <em>oder</em> Argon2d/id. Die <code>Max Müller.md</code>-Profilbeschreibung liefert den OSINT-Kontext für die Wortliste.</p>
+       <p><strong>Syntax:</strong> Der Hash-Payload liegt — wie bei 7z — <em>nach dem ersten Doppelpunkt</em>. Ein einfaches <code>s/^[^:]+://</code> reicht. <em>Wichtig:</em> Der Dateiname mit Leerzeichen muss in Anführungszeichen — sonst interpretiert die Shell zwei Dateinamen.</p>
       <div class="codewrap"><pre><code>keepass2john "Max Müller.kdbx" &gt; kdbx.john
-sed -E "s/^[^:]+://" kdbx.john &gt; kdbx.hashcat</code></pre></div>` },
-    { id:"ext-libre", title:"libreoffice2john", meta:"→ -m 18400", body:
-      `<p>Für ODF-Dateien (<code>.odt</code>/<code>.ods</code>/<code>.odp</code>) — <strong>Achtung:</strong> die <code>Numbers&lt;X&gt;</code>-Aufgabendateien sind trotz Namens echte ODF-Dateien, keine Apple-Numbers-Dateien. Braucht zusätzlich Suffix-Cleanup.</p>
-      <div class="codewrap"><pre><code>libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt; Numbers1.hashcat</code></pre></div>` },
-    { id:"ext-iwork", title:"iwork2john", meta:"→ -m 23300", body:
-      `<p>Für echte Apple-iWork-Dateien: <code>.pages</code> / <code>.numbers</code> / <code>.key</code> (z. B. <code>Poem.pages</code>, <code>MySheet.numbers</code>, <code>Passwords.pages</code>).</p>
-      <div class="codewrap"><pre><code>iwork2john Poem.pages &gt; poem.john
-sed -E "s/^[^:]+://" poem.john &gt; poem.hashcat</code></pre></div>` },
-    { id:"ext-office", title:"office2john.py", meta:"→ -m 9400/9500/9600", body:
-      `<p>Für MS Office <code>.docx</code>/<code>.xlsx</code>/<code>.pptx</code> — nicht Teil der aktuellen Aufgaben.</p>
+sed -E "s/^[^:]+://" kdbx.john &gt; kdbx.hashcat
+# Angriff: hashcat -m 13400 kdbx.hashcat -a0 osint.txt</code></pre></div>` },
+    { id:"ext-libre", title:"libreoffice2john — Numbers1.odt", meta:"→ -m 18400", body:
+      `<p><strong>Wofür:</strong> ODF-Dateien (<code>.odt</code>/<code>.ods</code>/<code>.odp</code>).</p>
+       <p><strong>Hintergrund der Aufgabe:</strong> Die <code>Numbers&lt;X&gt;</code>-Dateien sind trotz des Namens <em>keine</em> Apple-Numbers-Dateien, sondern echte LibreOffice-Dokumente — ein klassisches Dateityp-Verarsche-Problem, das <code>file</code> aufdeckt. ODF hat einen besonderen Hash: Er enthält einen Hash-Präfix (Dateiname), den eigentlichen Verifikations-Hash (nach dem ersten <code>:</code>) und ein redundantes Suffix am Ende.</p>
+       <p><strong>Die sed-Kette im Detail:</strong> <code>sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//'</code></p>
+       <ul>
+         <li><code>-e 's/[^:]+://'</code> — entfernt den Dateinamen-Präfix (alles bis zum ersten <code>:</code>).</li>
+         <li><code>-e 's/:::::[^:]+$//'</code> — entfernt ein Trenn-Suffix am Zeilenende: Fünf Doppelpunkte gefolgt von beliebigen Nicht-Doppelpunkten bis Zeilenende werden gelöscht. Das ist die von LibreOffice angehängte, für hashcat irrelevante Zusatzinformation.</li>
+       </ul>
+      <div class="codewrap"><pre><code>libreoffice2john Numbers1.odt | sed -E -e 's/[^:]+://' -e 's/:::::[^:]+$//' &gt; Numbers1.hashcat
+# Angriff: hashcat -m 18400 Numbers1.hashcat -a0 rockyou.txt</code></pre></div>` },
+    { id:"ext-office", title:"office2john.py — Dokument.docx", meta:"→ -m 9400/9500/9600", body:
+      `<p><strong>Wofür:</strong> MS-Office-<code>.docx</code>/<code>.xlsx</code>/<code>.pptx</code>. Nicht Teil der aktuellen Aufgaben, aber Standard-Repertoire.</p>
+       <p><strong>Syntax:</strong> Office-Dokumente sind ZIP-Container (<code>PK</code>-Header). In modernen Dateien (Office 2007+) ist der eigentliche Hash im <code>docProps</code>- oder <code>EncryptedPackage</code>-Teil. <code>office2john.py</code> extrahiert und formatiert das korrekt.</p>
       <div class="codewrap"><pre><code>office2john.py Dokument.docx &gt; doc.john
 sed -E "s/^[^:]+://" doc.john &gt; doc.hashcat</code></pre></div>` },
-    { id:"ext-dmg", title:"dmg2john", meta:"→ -m 16400/16700 (oder direkt John)", body:
-      `<p>Für verschlüsselte macOS-DMGs — nicht Teil der aktuellen Aufgaben. Wenn hashcat den Typ nicht kennt, direkt mit John angreifen.</p>
-      <div class="codewrap"><pre><code>dmg2john Container.dmg &gt; dmg.john
-john dmg.john --wordlist=/usr/share/wordlists/rockyou.txt</code></pre></div>` },
+    { id:"ext-iwork", title:"iwork2john — Poem.pages", meta:"→ -m 23300", body:
+      `<p><strong>Wofür:</strong> echte Apple-iWork-Dateien: <code>.pages</code> / <code>.numbers</code> / <code>.key</code>. Im Lab sind das <code>Poem.pages</code> und <code>Passwords.pages</code>.</p>
+       <p><strong>Hintergrund:</strong> iWork-Dokumente sind auch ZIP-Container, aber mit einem eigenen Verschlüsselungsformat (ICGCrypt). Der Hash-Modus <code>-m 23300</code> deckt alle iWork-Typen ab.</p>
+       <p><strong>Syntax:</strong> Wie bei fast allen <code>*2john</code>-Tools: Dateiname-Präfix per sed entfernen, Suffix gibt es nicht.</p>
+      <div class="codewrap"><pre><code>iwork2john Poem.pages &gt; poem.john
+sed -E "s/^[^:]+://" poem.john &gt; poem.hashcat
+# Angriff: hashcat -m 23300 poem.hashcat -a0 rockyou.txt -r rulefile</code></pre></div>` },
   ];
 
   var JOHN_ATTACK = [
     { id:"ja-wordlist", title:"john &lt;hash&gt; --wordlist=…", meta:"Wörterbuchangriff", body:
       `<div class="codewrap"><pre><code>john hurdle.john --wordlist=Passworte.txt</code></pre></div>
-      <p>Sinnvoll direkt mit John, wenn hashcat den Hashtyp (noch) nicht unterstützt, oder für kleine, exakte Kandidatenlisten wie bei <code>Hurdle.jpg.7z</code>.</p>` },
+      <p>Sinnvoll direkt mit John, wenn hashcat den Hashtyp (noch) nicht unterstützt, oder für kleine, exakte Kandidatenlisten wie bei <code>Hurdle.jpg.7z</code>. John liest den Dateinamen aus dem Hash und sucht sich die Ziel-Datei selbst.</p>` },
     { id:"ja-rules", title:"john --rules=…", meta:"Regeln anwenden", body:
-      `<div class="codewrap"><pre><code>john hurdle.john --wordlist=Passworte.txt --rules=best64</code></pre></div>` },
+      `<div class="codewrap"><pre><code>john hurdle.john --wordlist=Passworte.txt --rules=best64</code></pre></div>
+      <p>John hat eigene Regel-Sets (<code>--rules=best64</code>, <code>--rules=Single</code> etc.), die unter <code>/etc/john/john.conf</code> definiert sind. Bei hashcat heißen dieselben Regeln <code>-r</code> — siehe <a href="#" data-goto="basics">Basics → Regeln</a>.</p>` },
     { id:"ja-show", title:"john --show", meta:"Ergebnisse anzeigen", body:
-      `<div class="codewrap"><pre><code>john --show hurdle.john</code></pre></div>` },
+      `<div class="codewrap"><pre><code>john --show hurdle.john</code></pre></div>
+      <p>Zeigt bereits geknackte Passwörter aus dem Potfile. Wenn John ständig „Keine Hashes geladen" sagt, meist ein Format-Problem — <code>--format=</code> hilft.</p>` },
     { id:"ja-format", title:"john --format=…", meta:"Auto-Detect überstimmen", body:
       `<p>Falls John den Hashtyp falsch errät (z. B. bei generischen Hash-Strings ohne <code>*2john</code>-Kontext).</p>
-      <div class="codewrap"><pre><code>john --format=Raw-SHA256 hash.txt --wordlist=/usr/share/wordlists/rockyou.txt</code></pre></div>` },
+      <div class="codewrap"><pre><code>john --format=Raw-SHA256 hash.txt --wordlist=/usr/share/wordlists/rockyou.txt</code></pre></div>
+      <p>Mit <code>--show --format=…</code> kann man auch gespeicherte Ergebnisse nach Format filtern.</p>` },
   ];
 
   var HC_MODES = [
     { id:"hm-a0", title:"-a0 — Wörterbuch", meta:"Standardfall", body:
-      `<p>Beispiel: exakte 5-Wort-Kandidatenliste gegen <code>Hurdle.jpg.7z</code>.</p>
-      <div class="codewrap"><pre><code>hashcat -m 11600 hurdle.hashcat -a0 Passworte.txt -r /usr/share/hashcat/rules/best64.rule</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Testet jeden Kandidaten aus der Wortliste (und optional: gegen jede Regel) gegen den Hash. Der schnellste Angriff — nutze ihn, wenn du denkst, das Passwort ist ein „echtes" Wort oder in einer Liste.</p>
+      <p><strong>Hintergrund:</strong> Bei <code>Hurdle.jpg.7z</code> gibt eine exakte <code>Passworte.txt</code> die Kandidaten vor — der ideale Fall für einen reinen Wörterbuchangriff.</p>
+      <div class="codewrap"><pre><code>hashcat -m 11600 hurdle.hashcat -a0 Passworte.txt -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+      <p><code>-r best64.rule</code> wendet zusätzlich 64 vortrainierte Transformationen (z.B. <code>Passwort1</code>, <code>passwort!</code>) auf jedes Wörterbuch-Wort an — erweitert den Suchraum erheblich.</p>` },
     { id:"hm-a1", title:"-a1 — Kombinationsangriff", meta:"Kreuzprodukt zweier Listen", body:
-      `<p>Beispiel: zwei Wörter aneinandergehängt, wie bei <code>MySheet.numbers</code> (<code>HausMaus</code>, <code>AffeAffe</code>).</p>
-      <div class="codewrap"><pre><code>hashcat -m 23300 mysheet.hashcat -a1 woerter.txt woerter.txt</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Bildet jedes Element aus Liste 1 × jedes Element aus Liste 2 und testet die Verkettung — sehr effizient für zusammengesetzte Passwörter.</p>
+      <p><strong>Hintergrund:</strong> Bei <code>MySheet.numbers</code> sind Passwörter aus zwei Wörtern zusammengezogen (<code>HausMaus</code>, <code>AffeAffe</code>, <code>alleLieben</code>) — genau das Kreuzprodukt, das <code>-a1</code> abdeckt.</p>
+      <div class="codewrap"><pre><code>hashcat -m 23300 mysheet.hashcat -a1 woerter.txt woerter.txt</code></pre></div>
+      <p>Ein Aufruf von <code>-a1 listeA listeB</code> erzeugt <code>listeA[i] + listeB[j]</code> für alle Paare. Gleiche Liste zweimal = alle Kombinationen aus zwei Wörtern.</p>` },
     { id:"hm-a3", title:"-a3 — Brute-Force / Maske", meta:"alle Kandidaten gemäß Maske", body:
-      `<p>Einfaches Beispiel: 5-stellige PIN als SHA-256.</p>
-      <div class="codewrap"><pre><code>hashcat -m 1400 pin.sha256 -a3 "?d?d?d?d?d"</code></pre></div>
-      <p class="hint">Für komplexere Policy-Masken (Großbuchstaben, Sonderzeichen-Klassen etc.) siehe <a href="#" data-goto="rest">Der Rest → Star.pdf</a>.</p>` },
+      `<p><strong>Was es tut:</strong> Probiert systematisch alle Kombinationen, die zur Maske passen. Drei interpretierbare Zeichensatz-Specials: eingebaute Klassen (<code>?l ?u ?d ?s ?a</code>), eigene Klassen (<code>-1</code> bis <code>-4</code>), und Längensteuerung (<code>--increment</code>).</p>
+      <p><strong>Einfaches Beispiel:</strong> 5-stellige PIN als SHA-256 — <code>hash.sha256</code> ist hier einfach die Datei, die einen rohen SHA-256-Hashstring enthält (der zu knackende Hash in hex).</p>
+      <div class="codewrap"><pre><code>hashcat -m 1400 hash.sha256 -a3 "?d?d?d?d?d"</code></pre></div>
+      <p><code>--increment</code> startet mit der kürzesten Länge (<code>--increment-min</code>) und erhöht bis zur Vollmaske (<code>--increment-max</code>):</p>
+      <div class="codewrap"><pre><code>hashcat -m 1400 hash.sha256 -a3 "?u?l?d?d?d?d?d?d" --increment --increment-min 1 --increment-max 6
+# testet zuerst 1 Zeichen, dann 2, …, bis 6 — statt immer 6 zu erwarten
+# perfekt wenn die Länge unbekannt ist, aber die Zeichenklassen klar sind</code></pre></div>
+      <p class="hint">Für komplexere Policy-Masken siehe <a href="#" data-goto="rest">Der Rest → Star.pdf</a>.</p>` },
+    { id:"hm-a5", title:"-a5 — Galerie (Hashattacks)", meta:"GPG-Wortliste als Maske", body:
+      `<p><strong>Was es tut:</strong> Nimmt die vordefinierten „Galerie"-Masken von Hashattacks (über <code>--gpu-accel</code>) — selten gebraucht, aber es gibt sie.</p>` },
     { id:"hm-a6", title:"-a6 — Hybrid (Wort + Maske)", meta:"Wort zuerst", body:
-      `<div class="codewrap"><pre><code># Wort + 4 Ziffern
-hashcat -m 1400 hash.sha256 candidates.txt -a6 "?d?d?d?d"</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Hängt an jedes Wort eine Maske an: <code>Wort + Maskenteil</code>. Bei <code>-a6</code> kommt die Wortliste <em>vor</em> die Maske.</p>
+      <div class="codewrap"><pre><code># Wort + 4 Ziffern: p@ssW0rd + 1234
+hashcat -m 1400 hash.sha256 candidates.txt -a6 "?d?d?d?d"
+# Wort + Sonderzeichen-Suffix: p@ssW0rd + !!!!
+hashcat -m 1400 hash.sha256 candidates.txt -a6 "?s?s?s?s"</code></pre></div>
+      <p>Deckelt den Fall ab, dass ein Basiswort plus ein policy-getriebener Anhang existiert.</p>` },
     { id:"hm-a7", title:"-a7 — Hybrid (Maske + Wort)", meta:"Maske zuerst", body:
-      `<p>Beispiel: Jahreszahl vor ein Wort aus der Städteliste (Baustein der <code>Star.pdf</code>-Strategie).</p>
-      <div class="codewrap"><pre><code>hashcat -m 10700 star.hashcat -a7 staedte.txt "202?d" -1 "0123456789"</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Setzt die Maske <em>vor</em> das Wort: <code>Maskenteil + Wort</code>.</p>
+      <p><strong>Hintergrund:</strong> Die <code>Star.pdf</code>-Policy beginnt mit <code>&lt;Jahr&gt;</code> (z.B. <code>202?</code>), danach kommen die Städte — für diese Reihenfolge braucht es <code>-a7</code>, nicht <code>-a6</code>.</p>
+      <div class="codewrap"><pre><code>hashcat -m 10700 star.hashcat -a7 staedte.txt "202?d" -1 "0123456789"
+# Jahr als erste Maske "202?d" = 2020–2029, dann kommt ein Städtewort aus der Liste</code></pre></div>` },
   ];
 
   var HC_MASKS = [
     { id:"mk-builtin", title:"Eingebaute Zeichensätze", meta:"?l ?u ?d ?s ?a", body:
-      `<div class="codewrap"><pre><code># 4-stellige PIN, nur Ziffern
-hashcat -m 1400 pin.sha256 -a3 "?d?d?d?d"</code></pre></div>` },
+      `<p><strong>Was sie bedeuten:</strong> Die eingebauten Masken-Platzhalter decken die vier Grundklassen ab — jeder wird beim Angriff durch ein Zeichen aus der Klasse ersetzt. Beispiel: 4-stellige PIN = nur Ziffern.</p>
+      <div class="codewrap"><pre><code>hashcat -m 1400 pin.sha256 -a3 "?d?d?d?d"</code></pre></div>
+      <p>Sonderkombination <code>?a</code> = <code>?l?u?d?s</code> — alle Zeichen, die auf einer US-Tastatur liegen (95 Zeichen). 8 Zeichen mit <code>?a</code> = 95⁸ Möglichkeiten — nicht trivial.</p>` },
     { id:"mk-custom", title:"Eigene Zeichensätze (-1…-4)", meta:"bis zu 4 eigene Klassen", body:
-      `<p>Beispiel: nur <code>$</code>, <code>€</code>, <code>!</code> als Sonderzeichen-Klasse (Policy von <code>Star.pdf</code>).</p>
-      <div class="codewrap"><pre><code>hashcat -m 10700 star.hashcat -a3 -1 '$€!' "?u?l?u?l?d?d?d?d?1?1?1?1"</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Definiert eigene Klassen, die in der Maske als <code>?1</code>/<code>?2</code>/… referenziert werden. Nützlich, wenn nur bestimmte Sonderzeichen erlaubt sind (Policy!) oder eine unübliche Klasse exakt bekannt ist.</p>
+      <p><strong>Beispiel Star.pdf:</strong> Die Policy erlaubt im Sonderzeichen-Feld nur <code>$</code>, <code>€</code>, <code>!</code> — das sind die Sonderzeichen, die in den Übungen verwendet wurden. Statt alle ~32 Sonderzeichen zu testen, grenzt man in einer eigenen Klasse exakt auf diese drei ein. Rechenzeitersparnis: 3⁴ statt 32⁴ ≈ 2 Mio. weniger Kandidaten.</p>
+      <div class="codewrap"><pre><code>hashcat -m 10700 star.hashcat -a3 -1 '$€!' "?u?l?u?l?d?d?d?d?1?1?1?1"
+# ?1 referenziert auf die mit -1 '$€!' definierte Klasse
+# Maske: GroßBuchstabe-KleinBuchstabe-GroßBuchstabe-KleinBuchstabe-4 Ziffern-4 Sonderzeichen($€!)</code></pre></div>
+      <p><code>--increment</code> nutzt dieselben Masken-Slots und erlaubt Längensteuerung (siehe <a href="#" data-goto="basics">-a3</a>).</p>` },
   ];
 
   var HC_RULES = [
-    { id:"rl-best64", title:"-r best64.rule", meta:"vortrainiert, guter Default", body:
-      `<div class="codewrap"><pre><code>hashcat -m 0 hash.md5 -a0 /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule</code></pre></div>` },
+    { id:"rl-basics", title:"Regel-Datei selbst anlegen", meta:"eigenes .rule-File", body:
+      `<p><strong>Warum eine eigene Datei?</strong> Statt für jede Transformation eine eigene Wörterbuch-Datei zu erzeugen, legt man Regeln in einer Textdatei ab und lässt hashcat sie pro Wort anwenden — der Angriff wird dadurch massiv schneller, weil die Kandidaten im Speicher erzeugt werden statt auf Platte.</p>
+      <p><strong>Workflow:</strong> Datei <code>meine.rule</code> mit einer Regel pro Zeile — dann mit <code>-r</code> referenzieren.</p>
+      <div class="codewrap"><pre><code>cat &gt; prefix-suffix.rule &lt;&lt;'EOF'
+c                          # 1. Großbuchstabe (Capitalize)
+$1 $2 $3                   # Ziffern 1–3 anhängen (Suffix)
+^S                         # Groß-S voranstellen (Präfix)
+^S $1 $2 $3                # Kombination: Präfix S + Ziffern
+EOF
+hashcat -m 1400 hash.sha256 candidates.txt -r prefix-suffix.rule</code></pre></div>
+      <p><strong>Fokus Prefix/Suffix/Kapitalisierung:</strong></p>
+      <div class="codewrap"><pre><code>cat &gt; kapital.rule &lt;&lt;'EOF'
+c          # Passwort → Passwort (Erster Buchstabe groß)
+l          # Passwort → passwort
+u          # Passwort → PASSWORT
+t          # Passwort → pASSWORT (Toggle Case)
+^S         # Passwort → SPasswort  (S voranstellen — z.B. S als Firmen-Initiale)
+$!         # Passwort → Passwort!  (! anhängen)
+EOF</code></pre></div>` },
     { id:"rl-cross", title:"zwei -r kombinieren", meta:"Kreuzprodukt der Regelsätze", body:
       `<div class="codewrap"><pre><code>hashcat -m 1400 hash.sha256 candidates.txt -r number_prepend.rule -r sc_append.rule</code></pre></div>
       <div class="callout warn"><div class="kicker">Duplikate vermeiden</div><code>$1:</code> und <code>:$1</code> liefern dasselbe Ergebnis — kostet nur doppelt Rechenzeit.</div>` },
+    { id:"rl-combinator", title:"-j / -k — Kombinator-Regeln", meta:"vor dem/ - nach Verbinden", body:
+      `<p><strong>Warum?</strong> Bei <code>-a1</code> (Kombination) kann man mit <code>-j</code> und <code>-k</code> Bearbeitungen direkt im Kombinationsschritt anwenden — statt ein Zwischenwörterbuch auszugeben und zu bereinigen.</p>
+      <p><strong>Was ist was:</strong></p>
+      <ul>
+        <li><code>-j &lt;regel&gt;</code> — wendet die Regel auf das <em>erste</em> Wort an (aus Liste A).</li>
+        <li><code>-k &lt;regel&gt;</code> — wendet die Regel auf das <em>zweite</em> Wort an (aus Liste B).</li>
+      </ul>
+      <p><strong>Beispiel — MySheet.numbers:</strong> Wörter sind kleingeschrieben in der Liste, aber korrekt großgeschrieben im Passwort. <code>-j c</code> kapitalisiert das zweite Wort der Kombination.</p>
+      <div class="codewrap"><pre><code># ohne Regel:  hausmaus  →  falsch
+# mit -j c:    hausMaus   →  richtig
+hashcat -m 23300 mysheet.hashcat lowercase.txt lowercase.txt -j c
+
+# Beispiel Star.pdf-Strategie: Bindestrich statt Leerzeichen verbinden
+hashcat --stdout staedte.txt staedte.txt -j '$x'  # x als Trennzeichen (aber: x != "-", siehe unten)
+
+# Präfix S an das ERSTE Wort (Liste A anfassen):
+hashcat -m 1400 hash.sha256 listeA.txt listeB.txt -j '^S'</code></pre></div>
+      <div class="callout tip"><div class="kicker">Klassiker-Falle: Bindestrich</div>Ein Literal-Bindestrich in einer Regel ist schwierig — besser das Trennzeichen per <code>tr -d</code> entfernen oder ein anderes Zeichen wählen bei <code>--stdout</code>. Du musst das Trennzeichen am Ende entfernen, weil es nicht zum Passwort gehört.</div>` },
   ];
 
   var HC_BUILD = [
     { id:"bd-stdout", title:"--stdout — Kandidaten nur ausgeben", meta:"Zwischenwörterbuch bauen", body:
-      `<p>Beispiel: Städteliste mit sich selbst kombinieren (Baustein der <code>Star.pdf</code>-Strategie).</p>
-      <div class="codewrap"><pre><code>hashcat --stdout staedte.txt staedte.txt -j '$-' | tr -d '-' &gt; staedte-kombis.txt</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Ohne Hash-Datei erzeugt hashcat nur die Kandidaten (Wörterbuch + Regeln + Kombination) und schreibt sie auf <code>stdout</code> — perfekt, um ein Zwischenwörterbuch zu bauen oder die Kandidatenliste zu prüfen, BEVOR man rechnen lässt.</p>
+      <p><strong>Beispiel — Star.pdf:</strong> Städteliste mit sich selbst kombinieren, Trennzeichen direkt in der Regeln und danach entfernen:</p>
+      <div class="codewrap"><pre><code># ohne Regeln: staedte×staedte als reines Kreuzprodukt, Trennzeichen erst in der Pipe:
+hashcat --stdout staedte.txt staedte.txt | tr -d '-' &gt; staedte-kombis.txt
+# oder kompakter in einem Rutsch MIT Regel (Präfix-/Suffix-Behandlung inline):
+hashcat --stdout staedte.txt staedte.txt -j '$-' | tr -d '-' &gt; staedte-kombis.txt</code></pre></div>
+      <p><strong>Warum <code>-j '$-'</code> + <code>tr -d</code>?</strong> <code>-j</code> regelt die PAAR-Verbindung: <code>$-</code> heißt „ans Ende des ersten Worts das Zeichen &lt;-&gt; hängen". Damit bekommst du <code>Stadt-Stadt</code> als Zwischenkandidation; <code>tr -d '-'</code> entfernt den Bindestrich wieder, weil er nur als Trenner diente. Ohne die Regel-Verarbeitung bleibt es ein echtes reines Kreuzprodukt — je nachdem, was du brauchst.</p>` },
+    { id:"bd-increment-mask", title:"--increment + --increment-min/max", meta:"Länge unbekannt? gestaffelt suchen", body:
+      `<p><strong>Warum?</strong> Wenn du die Länge des Passworts nicht kennst, aber die Zeichenklassen (z.B. „nur Ziffern"), ist eine Vollmaske zu lang, eine kurze zu kurz. <code>--increment</code> durchläuft alle Längen systematisch — von der kürzesten bis zur vollen Maske.</p>
+      <div class="codewrap"><pre><code># Testet ALLE PIN-Längen 1–6, nur Ziffern:
+hashcat -m 1400 hash.sha256 -a3 "?d?d?d?d?d?d" --increment --increment-min 1 --increment-max 6
+# 1 Stelle (10), 2 Stellen (100), ... 6 Stellen (1.000.000) — sucht vorher kürzer
+
+# Kombiniert mit eigener Klasse und Masken-Verkürzung:
+hashcat -m 10700 star.hashcat -a3 -1 '$€!' "?1?1?1?1" --increment --increment-min 1 --increment-max 4</code></pre></div>
+      <p><strong>Tipp:</strong> <code>--increment</code> testet in beide Richtungen — sucht zuerst kürzer. Bei unbekannter Länge IMMER verwenden statt raten.</p>` },
     { id:"bd-prince", title:"princeprocessor", meta:"Fragment-Kombinatorik, pipebar", body:
-      `<p>Beispiel: OSINT-Fragmente aus dem Profil von <code>Max Müller.md</code> kombinieren, direkt an hashcat pipen.</p>
-      <div class="codewrap"><pre><code>princeprocessor --pw-min=6 --pw-max=20 osint.txt \\
-  | hashcat -m 13400 kdbx.hashcat -r /usr/share/hashcat/rules/best64.rule</code></pre></div>` },
+      `<p><strong>Was es tut:</strong> Zerlegt eine Wortliste in Fragmente und kombiniert sie zu plausiblen neuen Passwörtern („Gordon's Ansatz"). Sehr effektiv bei Passwörtern, die aus mehreren Wörtern/Bausteinen zusammengesetzt sind.</p>
+      <p><strong>Beispiel — Max Müller.kdbx:</strong> OSINT-Fragmente aus der Profildatei (<code>Max</code>, <code>Müller</code>, <code>Mannheim</code>, Geburtsjahr, Haustiername) kombiniert Prince in allen sinnvollen Längen und verkettet sie.</p>
+      <div class="codewrap"><pre><code>princeprocessor --pw-min=6 --pw-max=20 osint.txt \
+  | hashcat -m 13400 kdbx.hashcat -r /usr/share/hashcat/rules/best64.rule</code></pre></div>
+      <p><code>--pw-min/--pw-max</code> begrenzen die Gesamtlänge der kombinierten Fragmente; <code>-r</code> ergänzt die Basic-Transformationen.</p>` },
+  ];
+
+  var HC_BENCHMARK = [
+    { id:"bm-single", title:"Einen Modus benchmarken", meta:"z.B. -m 1400 (SHA-256)", body:
+      `<p><strong>Warum?</strong> Die Zahl „X Millionen Hashes/Sekunde" bestimmt, wie realistisch ein Angriff ist — und sie variiert massiv je nach Hash-Typ, Hardware und Treiber. Vor einer schwierigen Aufgabe misst man kurz die eigene Leistung, um die Zeiten im Lösungsweg angeben zu können.</p>
+      <div class="codewrap"><pre><code># Schnelltest für einen bestimmten Hash-Modus, mit nativer Beschleunigung:
+hashcat -b -m 1400 --backend-ignore-opencl
+# Ausgabe (Beispiel):  SHA256 ... H/s:  1.2 Gh/s
+
+# Genauer: klassischer Benchmark für Garnichts (alle Modi) — oder gezielt:
+hashcat -b -m 11600 --backend-ignore-opencl   # 7-Zip
+hashcat -b -m 13400 --backend-ignore-opencl   # KeePass (KDBX3/KDBX4)
+hashcat -b -m 23300 --backend-ignore-opencl   # iWork</code></pre></div>
+      <p><strong>Was die Ausgabe sagt:</strong> <code>-b</code> / <code>--benchmark</code> mixt eine synthetische Wörterbuch-Wortliste durch einen bestimmten Modus und misst die Geschwindigkeit in Hashes pro Sekunde (H/s), Kilo-, Mega- oder Giga-H/s. Das ist die Zahl, die du für die „Angriffsdauer"-Berechnung brauchst.</p>
+      <div class="callout tip"><div class="kicker">Angriffsdauer abschätzen</div>Wenn du den Kandidaten-Suchraum kennst (<code>Zeichensatz^Länge</code> oder Wortlistenlänge + Regeln), teilst du ihn durch die H/s-Zahl:</div>
+      <div class="codewrap"><pre><code># Kandidaten / Hashes pro Sekunde = Sekunden
+#   z.B. 1 Mio Kandidaten bei 500.000 H/s → 2 Sekunden
+#   z.B. 95^8 Kandidaten bei 1.2 Gh/s  → ~1 Woche</code></pre></div>` },
   ];
 
   var SONDER = [
     { id:"so-java", title:"Java String.hashCode() — kein Krypto-Hash", meta:"JavaHashcodes.txt", body:
-      `<p><code>String.hashCode()</code> ist 32 Bit, unsalted, kollisionsanfällig — <strong>kein hashcat-Modus dafür.</strong> Richtiger Weg: Formel selbst nachbauen und Kandidaten durchtesten.</p>
+      `<p><strong>Warum kein hashcat-Modus?</strong> <code>String.hashCode()</code> ist eine 32-Bit-Zahl mit einer besonderen (linearen) Konstruktion — <em>keine</em> kryptografische Hashfunktion. hashcat kennt keinen Modus dafür, weil der Algorithmus zu trivial und zu schnell nachbaubar ist, um GPU-Beschleunigung zu rechtfertigen.</p>
+      <p><strong>Richtiger Weg:</strong> Formel selbst nachbauen und Kandidaten durchtesten. Die Formel ist die Definition von <code>Java.lang.String.hashCode()</code> aus der Java-Doku:</p>
       <div class="codewrap"><pre><code>s[0]*31^(n-1) + s[1]*31^(n-2) + ... + s[n-1]   (32-bit signed, mit Overflow)</code></pre></div>
       <div class="codewrap"><pre><code>def java_hashcode(s: str) -&gt; int:
     h = 0
@@ -114,7 +240,8 @@ with open("/usr/share/wordlists/rockyou.txt", encoding="latin-1") as f:
         word = word.rstrip("\\n")
         if java_hashcode(word) in target:
             print("Treffer:", word)</code></pre></div>
-      <div class="callout warn"><div class="kicker">Kollisionen einplanen</div>32 Bit ⇒ ab ca. <code>2^16</code> Kandidaten wird ein Kollisionstreffer wahrscheinlich (Geburtstagsparadoxon, vgl. <a href="#" data-goto="theorie">Theorie → Hashfunktionen</a>). Jeden Treffer gegen den echten Kontext verifizieren. Reines Python ist für Millionen Kandidaten langsam — mit <code>multiprocessing</code> parallelisieren oder in C/Java nachbauen.</div>` },
+      <div class="callout warn"><div class="kicker">Kollisionen einplanen</div>32 Bit ⇒ ab ca. <code>2^16</code> Kandidaten wird ein Kollisionstreffer wahrscheinlich (Geburtstagsparadoxon, vgl. <a href="#" data-goto="theorie">Theorie → Hashfunktionen</a>). Jeden Treffer gegen den echten Kontext verifizieren. Reines Python ist für Millionen Kandidaten langsam — mit <code>multiprocessing</code> parallelisieren oder in C/Java nachbauen.</div>
+      <p><strong>Meet-in-the-middle (Fortgeschritten):</strong> Für sehr lange Kandidaten kann man den Suchraum halbieren: Berechne für alle Präfixe und alle Suffixe die (linearen) Beiträge getrennt, speichere sie in einer Hash-Tabelle und suche, wo sie zusammen den Zielwert ergeben. Da <code>hashCode</code> linear ist (<code>h(ab) = h(a)*31^len(b) + h(b)</code>), kann man <code>h(a)*31^len(b)</code> gegen <code>target - h(b)</code> mappen. Voraussetzung: die Wortliste ist klein genug, dass beide Seiten passen. Das ist die klassische Angriffsform bei 32-Bit-Hashes mit bekannter Struktur.</p>` },
 
     { id:"so-kdbx", title:"KeePass .kdbx — zu neue Datei-Version", meta:"Max Müller.kdbx", body:
       `<p><strong>Problem:</strong> <code>keepass2john</code> bricht ab oder liefert einen Hash, den die installierte hashcat-Version nicht kennt — wenn die <code>.kdbx</code>-Datei mit einer neueren KDBX-Version bzw. einem neueren KDF (Argon2d/Argon2id statt klassischem AES-KDF) erstellt wurde, als das lokale Tooling unterstützt.</p>
@@ -133,6 +260,14 @@ with open("/usr/share/wordlists/rockyou.txt", encoding="latin-1") as f:
         <li>John (jumbo) ebenfalls aktuell halten — bei Bedarf aus dem <a href="https://github.com/openwall/john" target="_blank" rel="noopener">GitHub-Repo</a> selbst bauen (<code>./configure &amp;&amp; make -sj4</code>).</li>
         <li>Erneut extrahieren, Hash gegen <code>hashcat --example-hashes -m 13400</code> (zeigt AES-KDF- <em>und</em> Argon2-Beispiel) abgleichen.</li>
       </ol>
+      <p><strong>Alternative: reines Python.</strong> Wenn hashcat den Argon2-Typ weiter streikt, kannst du KeePass-Hashes direkt in Python angreifen. Der kritische Teil ist das KDF — für AES-KDF reicht ein dünner PMC-Implementierung, für Argon2 nutzt du das <code>argon2-cffi</code>-Paket und baust die <code>-m 13400</code>-Payload-Manipulation selbst. Struktur:</p>
+      <div class="codewrap"><pre><code># 1) keepass2john "Max Müller.kdbx" — selbst wenn hashcat scheitert, bekommst du den Hash
+# 2) Baue die Übersetzung selbst (Skript-Logik):
+#      - parse $keepass$... : KDF-Marker, Runden, Salt
+#      - KDF anwenden (AES-KDF: HMAC/Key-Derivation oder Argon2)
+#      - Prüf hash des Zielwerts
+# 3) Für jeden Kandidaten: KDF + Compare — in einer Schleife</code></pre></div>
+      <p>Das eigene Python-Vorgehen lohnt sich vor allem, wenn man den Debug-Zwang hat — sonst ist das aktuellste binary hashcat der schnellere Weg. <strong>Unabhängig davon:</strong> prüfe zuerst, ob <code>keepass2john</code> selbst schon den neueren KDBX-Typ hat. Neuere John-Versionen (jumbo ≥ 1.9) erkennen und extrahieren KDBX4 automatisch.</p>
       <div class="callout tip"><div class="kicker">Nebeneffekt</div>Argon2 ist absichtlich speicherhart — GPU-Beschleunigung bringt kaum etwas, ein Angriff auf eine Argon2-kdbx ist realistisch <em>viel</em> langsamer als auf eine AES-KDF-kdbx. Siehe <a href="#" data-goto="theorie">Theorie → Argon2 &amp; LUKS2</a>.</div>` },
 
     { id:"so-openssl", title:"OpenSSL — False Positives durch Padding", meta:"personal_information.aes256cbc_sha1", body:
@@ -156,6 +291,16 @@ done &lt; personal_information.aes256cbc_sha1.password_candidates.txt</code></pr
         <li><strong>ZIP:</strong> klassisches PKZIP (<code>-m 17200/17210/17220/17225/17230</code>, je nach Kompressionsverfahren) vs. WinZip/AES (<code>-m 13600</code>).</li>
       </ul>
       <p>Bei Unsicherheit: bereinigten Hash-String Zeichen für Zeichen gegen <code>hashcat --example-hashes</code> für die in Frage kommenden Modi vergleichen, statt zu raten und Rechenzeit zu verschwenden.</p>` },
+
+    { id:"so-benchmark", title:"--benchmark / -b — Eigene Hardware messen", meta:"H/s für einen Modus", body:
+      `<p><strong>Warum?</strong> Die Rechenleistung deines Geräts für einen bestimmten Hash-Typ bestimmt, ob ein Angriff in Stunden, Tagen oder Jahrzehnten endet. hashcat hat dafür den eingebauten Benchmark.</p>
+      <div class="codewrap"><pre><code>hashcat -b --backend-ignore-opencl   # benchmarkt ALLE Modi
+hashcat -b -m 1400 --backend-ignore-opencl   # nur SHA-256
+hashcat -b -m 11600 --backend-ignore-opencl  # 7-Zip
+hashcat -b -m 13400 --backend-ignore-opencl  # KeePass (AES-KDF)
+hashcat --benchmark -m 23300 --backend-ignore-opencl  # iWork</code></pre></div>
+      <p><strong>Was die Ausgabe zeigt:</strong> H/s (Hashes pro Sekunde) in H/s, kH/s, MH/s oder GH/s. Damit kannst du die Angriffsdauer überschlagen: <code>Sekunden = Kandidaten / H/s</code>.</p>
+      <p><strong>Wichtig:</strong> <code>--backend-ignore-opencl</code> erzwingt die CUDA/HIP-Variante, falls OpenCL-Treiber fehlen (häufig in Docker/Headless-Setups). Ohne GPU läuft hashcat auf der CPU — deutlich langsamer.</p>` },
   ];
 
   var TASKS = [
@@ -179,12 +324,45 @@ hashcat -m 23300 mysheet.hashcat -a1 woerter.txt woerter.txt
 
 # Falls Basisliste kleingeschrieben vorliegt: erst Capitalize-Regel anwenden
 hashcat --stdout woerter_lower.txt -r &lt;(echo c) &gt; woerter_cap.txt
-hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre></div>` },
+hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre></div>
+      <p>Praktischer ist <code>-j c</code>, das direkt im Kombinationsschritt das zweite Wort kapitalisiert — keine Zwischendatei nötig.</p>` },
     { id:"tk-passwords", title:"Passwords.pages — Köder-Dateiname", meta:"nicht täuschen lassen", body:
       `<p>Der Dateiname ist ein Köder — nicht davon ausgehen, dass das Passwort trivial ist, nur weil die Datei „Passwords" heißt. Kurzer Trivial-Check (leer, <code>password</code>, Dateiname selbst) lohnt sich trotzdem, bevor der Standardweg (rockyou + <code>best64</code> über <code>iwork2john</code>) läuft.</p>` },
     { id:"tk-kdbx-osint", title:"Max Müller.kdbx — OSINT-Wortliste aus dem Profil bauen", meta:"Max Müller.md als Basis", body:
       `<p>Profilbeschreibung auswerten: Vornamen, Nachname, Geburtsdatum, Ort, Straße, Haustiername, Hobbys → als Fragmente in <code>osint.txt</code> sammeln, mit Princeprocessor kombinieren (siehe Basics → <code>princeprocessor</code>).</p>
-      <div class="callout tip"><div class="kicker">Datumsformate nicht vergessen</div>Geburtsdaten in mehreren Schreibweisen aufnehmen: <code>1990</code>, <code>90</code>, <code>19900504</code>, <code>04051990</code>, <code>0405</code> — Menschen variieren das kaum, aber unvorhersehbar genug, dass man alle Varianten braucht.</div>` },
+      <div class="callout tip"><div class="kicker">Datumsformate nicht vergessen</div>Geburtsdaten in mehreren Schreibweisen aufnehmen: <code>1990</code>, <code>90</code>, <code>19900504</code>, <code>04051990</code>, <code>0405</code> — Menschen variieren das kaum, aber unvorhersehbar genug, dass man alle Varianten braucht.</div>
+      <p><strong>Verifikation:</strong> Ein Treffer bei KeePass ist selten eindeutig (Padding-Problem nicht vorhanden, aber Falsch-Positive durch Kollisionen möglich). Nach dem Crack immer prüfen, ob die KDBX sich mit dem gefundenen Passwort tatsächlich öffnet.</p>` },
+  ];
+
+  var HASH_VS_KDF = [
+    { id:"hk-unterschied", title:"Hash-Funktion vs. KDF — der Unterschied", meta:"was du wissen musst", body:
+      `<p>Zwei Begriffe, die im Kontext Passwort-Cracking ständig vermischt werden — der Unterschied ist <strong>der</strong> zentrale Punkt fürs Verständnis:</p>
+      <ul>
+        <li><strong>Hash-Funktion (<code>H(M)=h</code>):</strong> Eine Funktion, die beliebig lange Eingaben auf eine feste Ausgabelänge abbildet. Schnell, deterministisch, kollisionsarm. <strong>Aber:</strong> Sie ist <em>für sich genommen nicht dafür gedacht, Passwörter zu sichern</em>, weil sie zu schnell berechenbar ist.</li>
+        <li><strong>KDF (Key Derivation Function):</strong> Eine spezialisierte Funktion, die genau das „Key-Stretching" einbaut — sie macht die Berechnung <em>absichtlich teuer</em> (viele Iterationen, viel Speicher), damit ein Angreifer pro Sekunde nur wenige Kandidaten testen kann.</li>
+      </ul>
+      <p><strong>Am Beispiel:</strong></p>
+      <div class="codewrap"><pre><code># Langsam (für Passwort-Cracking IRRELEVANT, weil zu schnell):
+#   H = SHA-256(M)              →  Milliarden Versuche/Sekunde
+
+# Schnell für normalen Einsatz, aber zu schnell für das Cracken:
+#   H = SHA-256(M + Salt)       →  Milliarden Versuche/Sekunde
+
+# Teuer durch Key-Stretching — die KDF:
+#   DK = PBKDF2(HMAC-SHA256, Passwort, Salt, 600.000 Iterationen)   → tausende/Sek
+#   DK = scrypt(Passwort, Salt, N=2^14, r=8, p=1)                   → hunderte/Sek
+#   DK = Argon2id(Passwort, Salt, m=64 MiB, t=3, p=1)               → Dutzende/Sek
+#   DK = bcrypt(Passwort, Salt, cost=12)                            → hunderte/Sek</code></pre></div>
+      <p><strong>Warum iterieren KDFs und nicht nur eine Runde?</strong> Eine Runde PBKDF2-HMAC-SHA256 ≈ 1 × SHA-256. Mit 600k Iterationen multipliziert sich die Zeit pro Kandidat — der Angreifer verliert entsprechend einen Faktor 600k. Genau das macht den Unterschied zwischen „sofort geknackt" und „deutlich teurer".</p>
+      <p><strong>Was du zusätzlich über KDFs wissen musst:</strong></p>
+      <ul>
+        <li><strong>PBKDF2:</strong> baut auf einer Basis-PRF (meist HMAC), Parameter: <code>c</code> = Iterationen, <code>dkLen</code> = gewünschte Schlüssellänge. Empfehlung (OWASP): ≥ 600.000 Iterationen.</li>
+        <li><strong>bcrypt:</strong> Blowfish-basiert, hat einen harten Speicher- und CPU-Kosten-Faktor (<code>cost</code>, logarithmisch) — 2^cost Operationen.</li>
+        <li><strong>scrypt:</strong> speicherintensiv (parametrisierbar über <code>N</code>), macht FPGAs/ASICs weniger attraktiv.</li>
+        <li><strong>Argon2:</strong> Gewinner des Password Hashing Competition. Speicherhart (<code>m</code>), iterativ (<code>t</code>), parallel (<code>p</code>). Varianten Argon2d (GPU-resistent), Argon2i (side-channel-resistent), Argon2id (beides). Siehe <a href="#" data-goto="theorie">Theorie</a>.</li>
+      </ul>
+      <p><strong>Praxisbezug zum Cracking:</strong> Ein FAST Hash (MD5, SHA-1, SHA-256, NTLM) gegen ein KDF (bcrypt, Argon2, PBKDF2) zu rechnen bedeutet einen Unterschied von mehreren Größenordnungen in der H/s-Zahl. Genau deshalb sind die <code>-m</code>-Modi für 7z, iWork oder KDBX so viel langsamer als <code>-m 0</code>/<code>-m 100</code> — das sind keine reinen Hash-Funktionen, sondern Datei-Verschlüsselungs-KDFs.</p>
+      <p><strong>Merken für die Prüfung:</strong> Hash-Funktion = schnell + für Passwort-Hashing ungeeignet. KDF = absichtlich teuer + zweckgebunden für Passwort-Hashing/Key-Derivation. Bei den Datei-Formaten im Lab (PDF-AES, iWork, 7z, KeePass) steckt fast immer ein KDF (PBKDF/AES-KDF/Argon2) drin — deshalb sind diese Modi langsamer als reine Hashing-Angriffe.</p>` },
   ];
 
   var THEORIE = [
@@ -211,13 +389,14 @@ hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre
         <li>16 Zeichen, 84er-Zeichensatz: 84¹⁶ ≈ 6,14 × 10³⁰.</li>
         <li>Diceware (6 Würfelwörter aus 6⁵-Wörterbuch): (6⁵)⁶ ≈ 2,21 × 10²³ — selbst mit 1 Billion Hashes/s über 7.000 Jahre für den vollen Suchraum.</li>
       </ul>` },
-    { id:"th-hashfn", title:"Hashfunktionen & warum Standard-Hashes ungeeignet sind", meta:"H(M)=h, KDF-Überblick", body:
+    { id:"th-hashfn", title:"Hashfunktionen — und wann sie ungeeignet sind", meta:"H(M)=h, KDF-Überblick", body:
       `<ul>
         <li>Eine Hashfunktion <code>H</code> bildet beliebig lange Nachrichten <code>M</code> auf einen Wert fester Länge ab: <code>h = H(M)</code>. Eine Bitänderung in <code>M</code> soll <code>h</code> mit hoher Wahrscheinlichkeit ändern (Lawineneffekt).</li>
         <li>Kollisionen sind bei jeder Hashfunktion unvermeidbar; kryptografische Hashfunktionen machen das Finden einer Kollision in der Praxis unmöglich — eine „normale" Hashfunktion (wie <code>String.hashCode()</code>) bietet diesen Schutz nicht.</li>
-        <li><strong>MD5, SHA-256, SHA-512, RIPE-MD sind für Passwort-Hashing ungeeignet</strong> — zu schnell berechenbar, kein eingebautes Key-Stretching.</li>
+        <li><strong>Wichtig fürs Verständnis:</strong> MD5, SHA-256, SHA-512, RIPE-MD sind für <em>Passwort-Hashing</em> ungeeignet, weil sie zu schnell berechenbar sind und kein eingebautes Key-Stretching haben. Als <em>Dokument-Integritätsprüfung</em> (Datei unverändert?) sind sie dagegen völlig normal.</li>
         <li>Spezialisierte KDFs: <strong>PBKDF2</strong> (Ethereum-Wallets), <strong>bcrypt</strong> (Blowfish-basiert, OpenBSD), <strong>scrypt</strong> (u. a. Smartphone-Passwort-Hashing), <strong>Argon2</strong> (z. B. LUKS2), <strong>yescrypt</strong> (moderne Linux-Distros). Alle sind parametrisierbar (Laufzeit/Speicher), um Angriffe zu verlangsamen.</li>
-      </ul>` },
+      </ul>
+      <p>Ausführlicher Vergleich siehe <a href="#" data-goto="rest">Der Rest → Hash-Funktionen vs. KDFs</a>.</p>` },
     { id:"th-pbkdf2", title:"PBKDF2 im Detail", meta:"5 Parameter, HMAC, OWASP", body:
       `<ul>
         <li><code>DK = PBKDF2(PRF, Password, Salt, c, dkLen)</code> — PRF (meist HMAC), Passwort, Salt, Rundenzähler <code>c</code>, gewünschte Schlüssellänge <code>dkLen</code>.</li>
@@ -305,8 +484,10 @@ hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre
   renderAccordion("acc-hc-masks", HC_MASKS);
   renderAccordion("acc-hc-rules", HC_RULES);
   renderAccordion("acc-hc-build", HC_BUILD);
+  renderAccordion("acc-hc-benchmark", HC_BENCHMARK);
   renderAccordion("acc-sonder", SONDER);
   renderAccordion("acc-tasks", TASKS);
+  renderAccordion("acc-hash-vs-kdf", HASH_VS_KDF);
   renderAccordion("acc-theorie", THEORIE);
 
   // ===================================================================
@@ -423,7 +604,7 @@ hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre
       return;
     }
     searchResults.innerHTML = matches.map(function(m, i){
-      var snippet = m.text.replace(/\\s+/g, " ").trim().slice(0, 140);
+      var snippet = m.text.replace(/\s+/g, " ").trim().slice(0, 140);
       return '<div class="sr-item' + (i===0?' active':'') + '" data-view="' + m.view + '" data-id="' + m.id + '">' +
         '<div class="sr-view">' + m.viewLabel + '</div>' +
         '<div class="sr-title">' + m.title + '</div>' +
