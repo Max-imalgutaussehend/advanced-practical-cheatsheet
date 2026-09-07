@@ -61,13 +61,34 @@ sed -E "s/^[^:]+://" kdbx.john &gt; kdbx.hashcat
        <p><strong>Syntax:</strong> Office-Dokumente sind ZIP-Container (<code>PK</code>-Header). In modernen Dateien (Office 2007+) ist der eigentliche Hash im <code>docProps</code>- oder <code>EncryptedPackage</code>-Teil. <code>office2john.py</code> extrahiert und formatiert das korrekt.</p>
       <div class="codewrap"><pre><code>office2john.py Dokument.docx &gt; doc.john
 sed -E "s/^[^:]+://" doc.john &gt; doc.hashcat</code></pre></div>` },
-    { id:"ext-iwork", title:"iwork2john — Poem.pages", meta:"→ -m 23300", body:
-      `<p><strong>Wofür:</strong> echte Apple-iWork-Dateien: <code>.pages</code> / <code>.numbers</code> / <code>.key</code>. Im Lab sind das <code>Poem.pages</code> und <code>Passwords.pages</code>.</p>
+    { id:"ext-iwork", title:"iwork2john — Poem.pages / MySheet.numbers / Passwords.pages", meta:"→ -m 23300", body:
+      `<p><strong>Wofür:</strong> echte Apple-iWork-Dateien: <code>.pages</code> / <code>.numbers</code> / <code>.key</code>. Im Lab sind das <code>Poem.pages</code>, <code>MySheet.numbers</code> und <code>Passwords.pages</code>.</p>
        <p><strong>Hintergrund:</strong> iWork-Dokumente sind auch ZIP-Container, aber mit einem eigenen Verschlüsselungsformat (ICGCrypt). Der Hash-Modus <code>-m 23300</code> deckt alle iWork-Typen ab.</p>
-       <p><strong>Syntax:</strong> Wie bei fast allen <code>*2john</code>-Tools: Dateiname-Präfix per sed entfernen, Suffix gibt es nicht.</p>
+       <p><strong>Syntax:</strong> Dateiname-Präfix per sed entfernen — <strong>Achtung, das Suffix ist nicht immer gleich</strong>, das reale Output-Format von <code>iwork2john</code> hängt von der Datei ab:</p>
+       <ul>
+         <li>Poem.pages: kein Suffix, einfacher Cut reicht: <code>s/^[^:]+://</code></li>
+         <li>MySheet.numbers: 4-<em>oder-mehr</em>-Doppelpunkt-Suffix: <code>s/:{4,}.*$//</code></li>
+         <li>Passwords.pages: <em>genau</em> 4-Doppelpunkt-Suffix: <code>s/:{4}.*$//</code></li>
+       </ul>
+       <p>Im Zweifel die Hash-Datei einmal ansehen (<code>cat *.john</code>) und das Suffix-Muster passend wählen, bevor blind gecuttet wird.</p>
       <div class="codewrap"><pre><code>iwork2john Poem.pages &gt; poem.john
 sed -E "s/^[^:]+://" poem.john &gt; poem.hashcat
-# Angriff: hashcat -m 23300 poem.hashcat -a0 rockyou.txt -r rulefile</code></pre></div>` },
+# Angriff: hashcat -m 23300 poem.hashcat -a0 rockyou.txt -r rulefile
+
+iwork2john MySheet.numbers &gt; mysheet.hash
+sed -E 's/^[^:]+://; s/:{4,}.*$//' mysheet.hash &gt; mysheet.hashcat
+
+iwork2john Passwords.pages &gt; passwords.hash
+sed -E 's/^[^:]+://; s/:{4}.*$//' passwords.hash &gt; passwords.hashcat</code></pre></div>` },
+    { id:"ext-openssl", title:"openssl2john — personal_information.*.encrypted", meta:"kein hashcat-Modus nötig", body:
+      `<p><strong>Wofür:</strong> mit <code>openssl enc</code> verschlüsselte Dateien (hier: <code>personal_information.aes256cbc_sha1.encrypted</code>, AES-256-CBC mit SHA-1-KDF).</p>
+       <p><strong>Hintergrund:</strong> <code>openssl2john</code> extrahiert Salt + Ciphertext-Präfix als hashcat-kompatiblen Hash. In der Praxis lieferte der hashcat-Weg hier aber <strong>50 Treffer</strong> gegen die Kandidatenliste — die PKCS#7-Padding-Prüfung, die hashcat als Erfolgskriterium nutzt, hat eine ~1/256-Fehlerquote und bei genug Kandidaten kippt das. Der zuverlässige Weg war ein eigenes Python-Skript, das direkt <code>EVP_BytesToKey</code> (OpenSSL-Standard-KDF) nachbildet und den Klartext inhaltlich prüft (lesbarer Text vs. Datenmüll) statt nur auf Padding zu vertrauen. Siehe <a href="#" data-goto="sonder">Sonderheiten → OpenSSL EVP_BytesToKey</a>.</p>
+      <div class="codewrap"><pre><code>openssl2john personal_information.aes256cbc_sha1.encrypted &gt; personal.hash
+sed -E 's/^[^:]+://; s/:::::[^:]+$//' personal.hash &gt; personal.hashcat
+# Testweise (unzuverlässig, False Positives moeglich):
+hashcat -a0 personal.hashcat personal_information.aes256cbc_sha1.password_candidates.txt
+# Zuverlaessig: eigenes Skript mit EVP_BytesToKey/SHA-1 + Klartext-Check
+python3 openssl_crack.py personal_information.aes256cbc_sha1.encrypted personal_information.aes256cbc_sha1.password_candidates.txt</code></pre></div>` },
   ];
 
   var JOHN_ATTACK = [
@@ -137,6 +158,29 @@ hashcat -m 1400 hash.sha256 candidates.txt -a6 "?s?s?s?s"</code></pre></div>
   ];
 
   var HC_RULES = [
+    { id:"rl-inline", title:"-j — Inline-Regel auf Kommandozeile", meta:"ohne extra .rule-Datei", body:
+      `<p><strong>Warum -j statt -r?</strong> Manchmal braucht man nur <em>eine</em> schnelle Transformation pro Wort, ohne eine eigene <code>.rule</code>-Datei anzulegen. Die <code>-j</code>-Regel wird auf jedes Kandidatenwort angewendet, <em>bevor</em> es mit dem zweiten Wort kombiniert wird (bei <code>-a1</code>) oder direkt (bei <code>-a0</code>).</p>
+      <p><strong>Hurdle.jpg.7z — echtes Beispiel aus dem Lab:</strong></p>
+      <div class="codewrap"><pre><code># Lösungsweg: Custom-Wortliste (Lauf, Flug, Gesang, Fund, Stand, ...)
+# + Regel die Buchstaben-Ersetzungen macht:
+hashcat -m 11600 hurdle.hashcat wortliste.txt -j '^ ^r^e^D' --show</code></pre></div>
+      <ul>
+        <li><code>^</code> = Präfix-Befehl (folgendes Zeichen wird voranestellt)</li>
+        <li><code> </code> (Leerzeichen) = Leerzeichen voranstellen</li>
+        <li><code>r</code> = Toggle Case des letzten Zeichens (r → R oder umgekehrt)</li>
+        <li><code>e</code> = Toggle Case (e → E)</li>
+        <li><code>D</code> = Toggle Case (D → d)</li>
+        <li>Ergebnis: <code>Lauf</code> → <code> LaRueD</code> (mit führendem Leerzeichen)</li>
+      </ul>
+      <p><strong>Passwords.pages — echtes Beispiel aus dem Lab:</strong> Zwei <code>-j</code>-Regeln <em>kombiniert</em> — das geht, hashcat erlaubt mehrere <code>-j</code>-Flags!</p>
+      <div class="codewrap"><pre><code># Hint: "#j *** j *** 1" — Passwort beginnt mit #, enthält j, endet mit 1
+# Custom-Wortliste: 4-buchstabige Woerter die mit j anfangen
+hashcat -m 23300 passwords.hashcat jwords.txt -j '$1' -j '^#'</code></pre></div>
+      <ul>
+        <li><code>-j '$1'</code> — <code>$</code> = Suffix-Befehl → haengt <code>1</code> an jedes Wort an</li>
+        <li><code>-j '^#'</code> — <code>^</code> = Praefix-Befehl → haengt <code>#</code> vor jedes Wort</li>
+        <li>Reihenfolge: Erst <code>$1</code> (Suffix), dann <code>^#</code> (Praefix) — Ergebnis: <code>jane</code> → <code>#jane1</code></li>
+      </ul>` },
     { id:"rl-basics", title:"Regel-Datei selbst anlegen", meta:"eigenes .rule-File", body:
       `<p><strong>Warum eine eigene Datei?</strong> Statt für jede Transformation eine eigene Wörterbuch-Datei zu erzeugen, legt man Regeln in einer Textdatei ab und lässt hashcat sie pro Wort anwenden — der Angriff wird dadurch massiv schneller, weil die Kandidaten im Speicher erzeugt werden statt auf Platte.</p>
       <p><strong>Workflow:</strong> Datei <code>meine.rule</code> mit einer Regel pro Zeile — dann mit <code>-r</code> referenzieren.</p>
@@ -308,30 +352,45 @@ hashcat --benchmark -m 23300 --backend-ignore-opencl  # iWork</code></pre></div>
       `<p>Keine Kontextinfos vorhanden → allgemeine Best Practices. <strong>Wichtigster Schritt zuerst:</strong> <code>file</code> statt der Endung glauben — die <code>Numbers&lt;X&gt;</code>-Dateien sind trotz Namens echte <strong>LibreOffice/ODF</strong>-Dateien (siehe Basics → <code>libreoffice2john</code>), <code>Poem.pages</code> ist eine echte <strong>Apple-Pages</strong>-Datei (→ <code>iwork2john</code>). Danach: rockyou + <code>best64</code>, bei Erfolglosigkeit Hybrid/Maske.</p>` },
     { id:"tk-star", title:"Star.pdf — vollständige Masken-/Kombinationsstrategie", meta:"Policy bekannt", body:
       `<p>Policy: ≥2 Großbuchst., ≥2 Kleinbuchst., ≥4 Ziffern, ≥4 Sonderzeichen (<code>$ € !</code>, oft wiederholt), Mindestlänge 16, Muster <code>&lt;Jahr&gt;&lt;Stadt1&gt;&lt;Stadt2&gt;&lt;Sonderzeichen&gt;</code>.</p>
-      <div class="codewrap"><pre><code># 1) Städteliste (große dt. Städte) mit sich selbst kombinieren
-hashcat --stdout staedte.txt staedte.txt -j '$-' | tr -d '-' &gt; stadt-kombis.txt
+      <div class="codewrap"><pre><code># 1) Städteliste (10 größte dt. Städte) mit sich selbst kombinieren (2-Step --stdout)
+hashcat --stdout -a1 staedte.txt staedte.txt &gt; staedte_combined.txt
 
-# 2) Jahreszahl voranstellen (Hybrid, Maske zuerst)
-hashcat -m 10700 star.hashcat -a7 stadt-kombis.txt "202?d" -1 "0123456789"
+# 2) Jahreszahlen (1900–2026) mit Städte-Kombis kreuzprodukt
+hashcat --stdout -a1 jahre.txt staedte_combined.txt &gt; jahre_staedte.txt
 
-# 3) Sonderzeichen-Suffix ergänzen (eigener Zeichensatz nur $/€/!)
-hashcat -m 10700 star.hashcat -a6 jahr-stadt-kombis.txt "?1?1?1?1" -1 '$€!'</code></pre></div>
-      <p>Alternativ alles in einem <code>-a3</code>-Maskenlauf, wenn die Städteliste kurz genug ist, um sie direkt als Maskenteil zu behandeln — meist ist Kombinieren-dann-Anhängen aber schneller.</p>` },
-    { id:"tk-mysheet", title:"MySheet.numbers — Kombinator + Case-Regel im Detail", meta:"nur Buchstaben, ≥8 Zeichen", body:
-      `<p>Nur Buchstaben, korrekte Groß-/Kleinschreibung (<code>Frankfurt</code>), Wörter oft zusammengezogen (<code>HausMaus</code>, <code>AffeAffe</code>, <code>alleLieben</code>).</p>
-      <div class="codewrap"><pre><code># Basisliste bereits korrekt großgeschrieben
-hashcat -m 23300 mysheet.hashcat -a1 woerter.txt woerter.txt
-
-# Falls Basisliste kleingeschrieben vorliegt: erst Capitalize-Regel anwenden
-hashcat --stdout woerter_lower.txt -r &lt;(echo c) &gt; woerter_cap.txt
-hashcat -m 23300 mysheet.hashcat -a1 woerter_cap.txt woerter_cap.txt</code></pre></div>
-      <p>Praktischer ist <code>-j c</code>, das direkt im Kombinationsschritt das zweite Wort kapitalisiert — keine Zwischendatei nötig.</p>` },
-    { id:"tk-passwords", title:"Passwords.pages — Köder-Dateiname", meta:"nicht täuschen lassen", body:
-      `<p>Der Dateiname ist ein Köder — nicht davon ausgehen, dass das Passwort trivial ist, nur weil die Datei „Passwords" heißt. Kurzer Trivial-Check (leer, <code>password</code>, Dateiname selbst) lohnt sich trotzdem, bevor der Standardweg (rockyou + <code>best64</code> über <code>iwork2john</code>) läuft.</p>` },
-    { id:"tk-kdbx-osint", title:"Max Müller.kdbx — OSINT-Wortliste aus dem Profil bauen", meta:"Max Müller.md als Basis", body:
-      `<p>Profilbeschreibung auswerten: Vornamen, Nachname, Geburtsdatum, Ort, Straße, Haustiername, Hobbys → als Fragmente in <code>osint.txt</code> sammeln, mit Princeprocessor kombinieren (siehe Basics → <code>princeprocessor</code>).</p>
-      <div class="callout tip"><div class="kicker">Datumsformate nicht vergessen</div>Geburtsdaten in mehreren Schreibweisen aufnehmen: <code>1990</code>, <code>90</code>, <code>19900504</code>, <code>04051990</code>, <code>0405</code> — Menschen variieren das kaum, aber unvorhersehbar genug, dass man alle Varianten braucht.</div>
-      <p><strong>Verifikation:</strong> Ein Treffer bei KeePass ist selten eindeutig (Padding-Problem nicht vorhanden, aber Falsch-Positive durch Kollisionen möglich). Nach dem Crack immer prüfen, ob die KDBX sich mit dem gefundenen Passwort tatsächlich öffnet.</p>` },
+# 3) Everything in einem -a6 Lauf mit eigener Klasse und increment
+hashcat -m 10700 star.hashcat -a6 -1 '$€!' jahre_staedte.txt '?1?1?1?1?1?1' \
+  --increment --increment-min 4 --increment-max 6 --show</code></pre></div>
+      <p><strong>Der Trick:</strong> Das 2-Step <code>--stdout</code> baut schrittweise Kombinationen auf — erst Städte×Städte, dann Jahre×Städte. Der finale <code>-a6</code>-Lauf hängt dann die Sonderzeichen an. <code>--increment</code> durchsucht Längen 4–6 systematisch. Ergebnis: <code>2025HamburgBerlin!!!!</code></p>` },
+    { id:"tk-mysheet", title:"MySheet.numbers — echtes Beispiel: Hint „Wir testen uns zu Tode“", meta:"nur Buchstaben, &gt;8 Zeichen", body:
+      `<p>Hint der Aufgabe: <em>„Wir testen uns zu Tode“</em> + Passwort ist länger als 8 Zeichen. Der Lösungsraum aus dem ganzen Satz kombiniert wäre riesig — also erst die Kernwörter (<code>Test</code>, <code>Tod</code>, <code>wir</code>, …) mit sich selbst kreuzprodukten, bis Kombinationen &gt;8 Zeichen entstehen.</p>
+      <div class="codewrap"><pre><code>iwork2john MySheet.numbers &gt; mysheet.hash
+sed -E 's/^[^:]+://; s/:{4,}.*$//' mysheet.hash &gt; mysheet.hashcat
+# Custom-Wortliste: alle Kombinationen aus dem Hint-Satz + größere Wortlisten
+# (KI-generiert, siehe Ressourcen → Prompts), Ergebnis: mysheet_candidates.txt
+hashcat -a0 mysheet.hashcat mysheet_candidates.txt</code></pre></div>
+      <p><strong>Ergebnis:</strong> <code>TestTest</code> — die naheliegendste Kombination aus dem Hint war die richtige. Lehre: bei einem wörtlichen Hint zuerst die simpelsten Wortkombinationen testen, bevor man auf große generische Listen ausweicht.</p>` },
+    { id:"tk-passwords", title:"Passwords.pages — echtes Beispiel: Hint „#j *** j *** 1“", meta:"Hint gibt Struktur vor", body:
+      `<p>Der Dateiname ist ein Köder — aber hier gab die Aufgabe zusätzlich einen echten Hint: <code>#j *** j *** 1</code>. Das legt die Struktur fest: beginnt mit <code>#</code>, ein 4-Buchstaben-Wort das mit <code>j</code> anfängt, endet mit <code>1</code>.</p>
+      <div class="codewrap"><pre><code>iwork2john Passwords.pages &gt; passwords.hash
+sed -E 's/^[^:]+://; s/:{4}.*$//' passwords.hash &gt; passwords.hashcat
+# Custom-Wortliste: alle 4-Buchstaben-Vornamen die mit j anfangen -> jwords.txt
+hashcat -m 23300 passwords.hashcat -a0 jwords.txt -j '$1' -j '^#'</code></pre></div>
+      <p>Siehe <a href="#" data-goto="basics">Basics → <code>-j</code> Inline-Regeln</a> für die Erklärung der beiden Regeln. <strong>Ergebnis:</strong> <code>#janejudy1</code>.</p>` },
+    { id:"tk-kdbx-osint", title:"Max Müller.kdbx — echtes Beispiel: KDBX4 zu neu für Standard-Tools", meta:"eigenes Python-Skript nötig", body:
+      `<p>Profilbeschreibung (Max Müller.md) auswerten: Vornamen im Umfeld (hier <code>Emma</code>, <code>Jonas</code>, <code>Laura</code>) als Basis einer Kombinations-Wortliste — alle Reihenfolgen, groß/klein, mit/ohne Leerzeichen.</p>
+      <div class="callout tip"><div class="kicker">Warum kein Standardtool?</div>KDBX Version 4 (Argon2-KDF) war zum Zeitpunkt des Labs zu neu für die verfügbare hashcat/john-Version im Setup — kein <code>keepass2john</code>-Support für dieses Format. Lösung: eigenes Python-Skript, das die Wortliste durchprobiert und das KDBX4-Hashing (Argon2) selbst nachbildet.</p></div>
+      <div class="codewrap"><pre><code># Wortliste: alle Kombinationen aus Emma/Jonas/Laura (Groß/Klein, mit/ohne Leerzeichen)
+python3 kdbx4crack.py</code></pre></div>
+      <p><strong>Ergebnis:</strong> <code>LauraEmmaJonas</code>. <strong>Verifikation:</strong> Nach dem Crack immer prüfen, ob die KDBX sich mit dem gefundenen Passwort tatsächlich öffnet — Argon2-Kollisionen sind zwar extrem unwahrscheinlich, aber ein echter Öffnungstest ist der einzige sichere Beweis.</p>` },
+    { id:"tk-java", title:"JavaHashcodes.txt — echtes Beispiel: eigenes Crack-Skript", meta:"kein hashcat-Modus, siehe Sonderheiten", body:
+      `<p>Kein hashcat-Modus für <code>String.hashCode()</code> (siehe <a href="#" data-goto="sonder">Sonderheiten → Java String.hashCode()</a> für die Formel). Lösungsweg: pro Zeichenlänge brute-forcen (a-z/A-Z) und die Meet-in-the-Middle-Eigenschaft nutzen, um den Suchraum zu halbieren.</p>
+      <div class="codewrap"><pre><code>python3 java_crack.py   # input: JavaHashcodes.txt, Ergebnis-Mapping Hashcode -&gt; Klartext</code></pre></div>
+      <p>Beispiel-Treffer aus dem Lab: <code>2147483647 → aAgaAXp</code>, <code>999999999 → rbgbafo</code>, <code>-2147483648 → aAgaAXq</code> — jede Zeile im Output ist ein eigener Hashcode/Klartext-Fund, mehrere davon einreichen.</p>` },
+    { id:"tk-openssl", title:"personal_information.*.encrypted — echtes Beispiel: KDF-Skript statt hashcat", meta:"50 False Positives mit hashcat", body:
+      `<p>hashcat-Weg über <code>openssl2john</code> lieferte <strong>50 Treffer</strong> gegen die Kandidatenliste — nicht verwertbar (siehe <a href="#" data-goto="sonder">Sonderheiten → OpenSSL Padding-False-Positives</a>). Lösung: eigenes Python-Skript mit <code>EVP_BytesToKey</code>/SHA-1 (OpenSSL-Standard-KDF), das das Ergebnis inhaltlich prüft statt nur aufs Padding zu vertrauen.</p>
+      <div class="codewrap"><pre><code>python3 openssl_crack.py personal_information.aes256cbc_sha1.encrypted personal_information.aes256cbc_sha1.password_candidates.txt</code></pre></div>
+      <p><strong>Ergebnis:</strong> Kandidat 12243, Passwort <code>sainsburys</code> → entschlüsselter Klartext: <code>Geboren 1976.</code></p>` },
   ];
 
   var HASH_VS_KDF = [
